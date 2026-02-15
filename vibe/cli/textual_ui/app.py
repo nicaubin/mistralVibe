@@ -1112,6 +1112,146 @@ class VibeApp(App):  # noqa: PLR0904
                 )
             )
 
+    async def _branch_history(self, args: str = "") -> None:
+        """List branches from past sessions."""
+        try:
+            from vibe.core.session.session_loader import SessionLoader
+
+            if not self.agent_loop.session_logger.enabled:
+                await self._mount_and_scroll(
+                    ErrorMessage(
+                        "Session logging is disabled — no history available.",
+                        collapsed=self._tools_collapsed,
+                    )
+                )
+                return
+
+            session_config = self.agent_loop.session_logger.session_config
+            sessions = SessionLoader.list_sessions_with_branches(session_config)
+
+            if not sessions:
+                await self._mount_and_scroll(
+                    UserCommandMessage(
+                        "No past sessions with branches found."
+                    )
+                )
+                return
+
+            lines = ["## Branch History (past sessions)\n"]
+            lines.append(
+                "| Session ID | Title | Date | Branches |"
+            )
+            lines.append(
+                "|------------|-------|------|----------|"
+            )
+            for s in sessions:
+                short_id = s["session_id"][:8]
+                title = s["title"][:40]
+                date = s["date"][:10] if s["date"] else "unknown"
+                branch_names = ", ".join(
+                    b["name"] for b in s["branches"]
+                )
+                lines.append(
+                    f"| `{short_id}` | {title} | {date} | {branch_names} |"
+                )
+
+            lines.append(
+                "\nUse `/branch-import <session_id> <branch_name>` to import a branch."
+            )
+            await self._mount_and_scroll(
+                UserCommandMessage("\n".join(lines))
+            )
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to list branch history: {e}",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+
+    async def _branch_import(self, args: str = "") -> None:
+        """Import a branch from a past session."""
+        parts = args.strip().split()
+        if len(parts) < 2:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Usage: /branch-import <session_id> <branch_name> [--as <new_name>]",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        session_id = parts[0]
+        branch_name = parts[1]
+        new_name = None
+        if len(parts) >= 4 and parts[2] == "--as":
+            new_name = parts[3]
+
+        try:
+            from vibe.core.session.branch_manager import BranchAlreadyExistsError
+            from vibe.core.session.session_loader import SessionLoader
+
+            if not self.agent_loop.session_logger.enabled:
+                await self._mount_and_scroll(
+                    ErrorMessage(
+                        "Session logging is disabled — cannot import branches.",
+                        collapsed=self._tools_collapsed,
+                    )
+                )
+                return
+
+            session_config = self.agent_loop.session_logger.session_config
+            session_dir = SessionLoader.find_session_by_id(
+                session_id, session_config
+            )
+            if session_dir is None:
+                await self._mount_and_scroll(
+                    ErrorMessage(
+                        f"Session '{session_id}' not found.",
+                        collapsed=self._tools_collapsed,
+                    )
+                )
+                return
+
+            branch = SessionLoader.load_branch_from_session(
+                str(session_dir), branch_name
+            )
+            if branch is None:
+                await self._mount_and_scroll(
+                    ErrorMessage(
+                        f"Branch '{branch_name}' not found in session '{session_id}'.",
+                        collapsed=self._tools_collapsed,
+                    )
+                )
+                return
+
+            imported = self.agent_loop.branch_manager.import_branch(
+                branch, new_name=new_name
+            )
+            self._refresh_branch_display()
+            display_name = imported.name
+            await self._mount_and_scroll(
+                UserCommandMessage(
+                    f"Imported branch **{display_name}** from session `{session_id[:8]}` "
+                    f"({imported.total_messages} messages, {imported.total_file_changes} file deltas)"
+                )
+            )
+        except BranchAlreadyExistsError:
+            target = new_name or branch_name
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Branch '{target}' already exists. Use `--as <new_name>` to rename.",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to import branch: {e}",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+
     async def _snapshot_create(self, args: str = "") -> None:
         """Create a snapshot of current state."""
         parts = args.strip().split(maxsplit=1)

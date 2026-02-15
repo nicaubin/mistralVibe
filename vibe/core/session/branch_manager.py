@@ -155,6 +155,33 @@ class BranchManager:
         """
         return list(self.branches.values())
 
+    def import_branch(
+        self, branch: Branch, new_name: str | None = None
+    ) -> Branch:
+        """Import a branch from another session.
+
+        The imported branch is made standalone (no parent, fork_point=0).
+
+        Args:
+            branch: Branch instance to import
+            new_name: Optional new name for the branch
+
+        Returns:
+            The imported Branch instance
+
+        Raises:
+            BranchAlreadyExistsError: If a branch with the same name already exists
+        """
+        name = new_name or branch.name
+        if name in self.branches:
+            raise BranchAlreadyExistsError(f"Branch '{name}' already exists")
+
+        branch.name = name
+        branch.parent = None
+        branch.fork_point = 0
+        self.branches[name] = branch
+        return branch
+
     def delete_branch(self, name: str, force: bool = False) -> None:
         """Delete a branch.
 

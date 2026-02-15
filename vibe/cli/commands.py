@@ -107,6 +107,16 @@ class CommandRegistry:
                 description="Delete a branch",
                 handler="_branch_delete",
             ),
+            "branch-history": Command(
+                aliases=frozenset(["/branch-history"]),
+                description="List branches from past sessions",
+                handler="_branch_history",
+            ),
+            "branch-import": Command(
+                aliases=frozenset(["/branch-import"]),
+                description="Import a branch from a past session",
+                handler="_branch_import",
+            ),
         }
 
         for command in excluded_commands:

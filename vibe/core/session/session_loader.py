@@ -13,6 +13,7 @@ from vibe.core.types import LLMMessage
 
 if TYPE_CHECKING:
     from vibe.core.config import SessionLoggingConfig
+    from vibe.core.session.branch import Branch
     from vibe.core.session.branch_manager import BranchManager
 
 
@@ -189,4 +190,122 @@ class SessionLoader:
             return BranchManager.deserialize(branches_data)
         except Exception:
             # If deserialization fails, return None to use default main branch
+            return None
+
+    @staticmethod
+    def list_sessions_with_branches(
+        config: SessionLoggingConfig, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """List recent sessions that contain branches.
+
+        Args:
+            config: Session logging configuration
+            limit: Maximum number of sessions to return
+
+        Returns:
+            List of dicts with session_dir, session_id, title, date,
+            and branches info, sorted by recency (newest first).
+        """
+        save_dir = Path(config.save_dir)
+        if not save_dir.exists():
+            return []
+
+        pattern = f"{config.session_prefix}_*"
+        session_dirs = list(save_dir.glob(pattern))
+
+        results: list[dict[str, Any]] = []
+        for session_dir in session_dirs:
+            branches_path = session_dir / BRANCHES_FILENAME
+            if not branches_path.is_file():
+                continue
+
+            # Read branches data
+            try:
+                with branches_path.open("r", encoding="utf-8", errors="ignore") as f:
+                    branches_data = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+
+            branches_info = branches_data.get("branches", {})
+            if not branches_info:
+                continue
+
+            # Read metadata for title and date
+            title = "Untitled"
+            date = ""
+            mtime = 0.0
+            metadata_path = session_dir / METADATA_FILENAME
+            if metadata_path.is_file():
+                try:
+                    with metadata_path.open(
+                        "r", encoding="utf-8", errors="ignore"
+                    ) as f:
+                        metadata = json.load(f)
+                    title = metadata.get("title", "Untitled")
+                    date = metadata.get("start_time", "")
+                    mtime = metadata_path.stat().st_mtime
+                except (OSError, json.JSONDecodeError):
+                    pass
+
+            # Extract session_id from branches data or dir name
+            session_id = branches_data.get("session_id", session_dir.name)
+
+            branch_summaries = []
+            for name, bdata in branches_info.items():
+                branch_summaries.append(
+                    {
+                        "name": name,
+                        "messages": len(bdata.get("messages", [])),
+                        "files": len(bdata.get("file_deltas", {})),
+                        "description": bdata.get("description", ""),
+                    }
+                )
+
+            results.append(
+                {
+                    "session_dir": str(session_dir),
+                    "session_id": session_id,
+                    "title": title,
+                    "date": date,
+                    "mtime": mtime,
+                    "branches": branch_summaries,
+                }
+            )
+
+        # Sort by recency
+        results.sort(key=lambda x: x["mtime"], reverse=True)
+        return results[:limit]
+
+    @staticmethod
+    def load_branch_from_session(
+        session_dir: str, branch_name: str
+    ) -> Branch | None:
+        """Load a specific branch from a session directory.
+
+        Args:
+            session_dir: Path to the session directory
+            branch_name: Name of the branch to load
+
+        Returns:
+            Branch instance if found, None otherwise
+        """
+        from vibe.core.session.branch import Branch
+
+        branches_path = Path(session_dir) / BRANCHES_FILENAME
+        if not branches_path.is_file():
+            return None
+
+        try:
+            with branches_path.open("r", encoding="utf-8", errors="ignore") as f:
+                branches_data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        branch_data = branches_data.get("branches", {}).get(branch_name)
+        if branch_data is None:
+            return None
+
+        try:
+            return Branch.model_validate(branch_data)
+        except Exception:
             return None
