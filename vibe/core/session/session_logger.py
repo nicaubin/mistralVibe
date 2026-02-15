@@ -16,11 +16,13 @@ from vibe.core.utils import is_windows, utc_now
 if TYPE_CHECKING:
     from vibe.core.agents.models import AgentProfile
     from vibe.core.config import SessionLoggingConfig, VibeConfig
+    from vibe.core.session.branch_manager import BranchManager
     from vibe.core.tools.manager import ToolManager
 
 
 METADATA_FILENAME = "meta.json"
 MESSAGES_FILENAME = "messages.jsonl"
+BRANCHES_FILENAME = "branches.json"
 
 
 class SessionLogger:
@@ -72,6 +74,14 @@ class SessionLogger:
                 "Cannot get session messages filepath when logging is disabled"
             )
         return self.session_dir / MESSAGES_FILENAME
+
+    @property
+    def branches_filepath(self) -> Path:
+        if self.session_dir is None:
+            raise RuntimeError(
+                "Cannot get session branches filepath when logging is disabled"
+            )
+        return self.session_dir / BRANCHES_FILENAME
 
     @property
     def git_commit(self) -> str | None:
@@ -201,6 +211,7 @@ class SessionLogger:
         base_config: VibeConfig,
         tool_manager: ToolManager,
         agent_profile: AgentProfile,
+        branch_manager: BranchManager | None = None,
     ) -> None:
         if not self.enabled or self.session_dir is None:
             return
@@ -279,6 +290,10 @@ class SessionLogger:
             }
 
             await SessionLogger.persist_metadata(metadata_dump, self.session_dir)
+
+            # Save branch manager state if provided
+            if branch_manager is not None:
+                await self.save_branches(branch_manager)
         except Exception as e:
             raise RuntimeError(
                 f"Failed to save session to {self.session_dir}: {e}"
@@ -295,6 +310,47 @@ class SessionLogger:
         self.session_start_time = utc_now().isoformat()
         self.session_dir = self.save_folder
         self.session_metadata = self._initialize_session_metadata()
+
+    async def save_branches(self, branch_manager: BranchManager) -> None:
+        """Save branch manager state to branches.json.
+
+        Args:
+            branch_manager: BranchManager instance to serialize
+        """
+        if not self.enabled or self.session_dir is None:
+            return
+
+        branches_data = branch_manager.serialize()
+        await SessionLogger.persist_metadata(branches_data, self.session_dir)
+
+        # Also write to branches.json specifically
+        branches_filepath = self.branches_filepath
+        temp_branches_filepath = None
+        try:
+            async with NamedTemporaryFile(
+                mode="w",
+                suffix=".json.tmp",
+                dir=str(self.session_dir),
+                delete=False,
+                encoding="utf-8",
+            ) as f:
+                temp_branches_filepath = Path(str(f.name))
+                await f.write(json.dumps(branches_data, indent=2, ensure_ascii=False))
+                await f.flush()
+                os.fsync(f.wrapped.fileno())
+
+            os.replace(temp_branches_filepath, str(branches_filepath))
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to persist branches to {branches_filepath}: {e}"
+            ) from e
+        finally:
+            if (
+                temp_branches_filepath
+                and temp_branches_filepath.exists()
+                and temp_branches_filepath.is_file()
+            ):
+                temp_branches_filepath.unlink()
 
     def cleanup_tmp_files(self) -> None:
         """Delete temporary files created more than 5 minutes ago"""

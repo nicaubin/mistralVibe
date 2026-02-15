@@ -51,6 +51,8 @@ from vibe.cli.textual_ui.widgets.messages import (
 )
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.path_display import PathDisplay
+from vibe.cli.textual_ui.widgets.branch_display import BranchDisplay
+from vibe.cli.textual_ui.widgets.branch_tree import BranchTreeWidget
 from vibe.cli.textual_ui.widgets.question_app import QuestionApp
 from vibe.cli.textual_ui.widgets.teleport_message import TeleportMessage
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
@@ -270,6 +272,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         with Horizontal(id="bottom-bar"):
             yield PathDisplay(self.config.displayed_workdir or Path.cwd())
+            yield BranchDisplay(self.agent_loop.branch_manager)
             yield NoMarkupStatic(id="spacer")
             yield ContextProgress()
 
@@ -939,6 +942,271 @@ class VibeApp(App):  # noqa: PLR0904
             self._agent_task = None
             if self.event_handler:
                 self.event_handler.current_compact = None
+
+    async def _branch_create(self, args: str = "") -> None:
+        """Create a new conversation branch."""
+        parts = args.strip().split(maxsplit=1)
+        if not parts:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Usage: /branch <name> [--description <text>]",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        name = parts[0]
+        description = ""
+        if len(parts) > 1 and "--description" in parts[1]:
+            description = parts[1].split("--description", 1)[1].strip()
+
+        try:
+            from vibe.core.session.branch_manager import BranchAlreadyExistsError
+
+            branch = self.agent_loop.branch_manager.create_branch(
+                name, description=description
+            )
+            self._refresh_branch_display()
+            await self._mount_and_scroll(
+                UserCommandMessage(
+                    f"Created branch **{name}** from **{branch.parent}** at message #{branch.fork_point}"
+                )
+            )
+        except BranchAlreadyExistsError:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Branch '{name}' already exists",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to create branch: {e}",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+
+    async def _branch_list(self, args: str = "") -> None:
+        """List all conversation branches."""
+        try:
+            # Check if --status flag is present
+            if "--status" in args:
+                tree_widget = BranchTreeWidget(self.agent_loop.branch_manager)
+                await self._mount_and_scroll(tree_widget)
+            else:
+                branches = self.agent_loop.branch_manager.list_branches()
+                active_name = self.agent_loop.branch_manager.active_branch_name
+
+                output = ["## Conversation Branches\n"]
+                for branch in branches:
+                    is_active = " **[active]**" if branch.name == active_name else ""
+                    parent_info = f" (from {branch.parent})" if branch.parent else ""
+                    output.append(
+                        f"- **{branch.name}**{is_active}{parent_info}: "
+                        f"{branch.total_messages} messages, {branch.total_file_changes} file changes"
+                    )
+
+                await self._mount_and_scroll(UserCommandMessage("\n".join(output)))
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to list branches: {e}",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+
+    async def _branch_switch(self, args: str = "") -> None:
+        """Switch to a different branch."""
+        name = args.strip()
+        if not name:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Usage: /switch <branch-name>",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        try:
+            from vibe.core.session.branch_manager import BranchNotFoundError
+
+            old_branch = self.agent_loop.branch_manager.active_branch_name
+            self.agent_loop.branch_manager.switch_branch(name)
+            self._refresh_branch_display()
+
+            await self._mount_and_scroll(
+                UserCommandMessage(
+                    f"Switched from **{old_branch}** to **{name}**"
+                )
+            )
+        except BranchNotFoundError:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Branch '{name}' not found",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to switch branch: {e}",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+
+    async def _branch_merge(self, args: str = "") -> None:
+        """Merge a branch (not yet implemented in MVP)."""
+        await self._mount_and_scroll(
+            UserCommandMessage(
+                "Branch merging is not yet implemented in this MVP.\n\n"
+                "For now, you can switch between branches and copy changes manually."
+            )
+        )
+
+    async def _branch_delete(self, args: str = "") -> None:
+        """Delete a branch."""
+        name = args.strip()
+        if not name:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Usage: /branch-delete <branch-name>",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        try:
+            from vibe.core.session.branch_manager import (
+                BranchManagerError,
+                BranchNotFoundError,
+            )
+
+            self.agent_loop.branch_manager.delete_branch(name)
+            self._refresh_branch_display()
+            await self._mount_and_scroll(
+                UserCommandMessage(f"Deleted branch **{name}**")
+            )
+        except (BranchNotFoundError, BranchManagerError) as e:
+            await self._mount_and_scroll(
+                ErrorMessage(str(e), collapsed=self._tools_collapsed)
+            )
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to delete branch: {e}",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+
+    async def _snapshot_create(self, args: str = "") -> None:
+        """Create a snapshot of current state."""
+        parts = args.strip().split(maxsplit=1)
+        if not parts:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Usage: /snapshot <name> [--description <text>]",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        name = parts[0]
+        description = ""
+        if len(parts) > 1 and "--description" in parts[1]:
+            description = parts[1].split("--description", 1)[1].strip()
+
+        try:
+            snapshot = self.agent_loop.branch_manager.create_snapshot(
+                name, description=description
+            )
+            await self._mount_and_scroll(
+                UserCommandMessage(
+                    f"Created snapshot **{name}** of branch **{snapshot.branch_name}** "
+                    f"at message #{snapshot.message_id}"
+                )
+            )
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to create snapshot: {e}",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+
+    async def _snapshot_list(self, args: str = "") -> None:
+        """List all snapshots."""
+        try:
+            snapshots = self.agent_loop.branch_manager.list_snapshots()
+
+            if not snapshots:
+                await self._mount_and_scroll(
+                    UserCommandMessage("No snapshots created yet.")
+                )
+                return
+
+            output = ["## Snapshots\n"]
+            for snapshot in snapshots:
+                desc = f": {snapshot.description}" if snapshot.description else ""
+                output.append(
+                    f"- **{snapshot.name}** ({snapshot.branch_name} @ msg #{snapshot.message_id}){desc}"
+                )
+
+            await self._mount_and_scroll(UserCommandMessage("\n".join(output)))
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to list snapshots: {e}",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+
+    async def _snapshot_restore(self, args: str = "") -> None:
+        """Restore from a snapshot."""
+        name = args.strip()
+        if not name:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    "Usage: /restore <snapshot-name>",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+            return
+
+        try:
+            from vibe.core.session.branch_manager import SnapshotNotFoundError
+
+            restored = self.agent_loop.branch_manager.restore_snapshot(name)
+            self._refresh_branch_display()
+            await self._mount_and_scroll(
+                UserCommandMessage(
+                    f"Restored snapshot **{name}** as new branch **{restored.name}**\n\n"
+                    f"Now on branch: **{restored.name}**"
+                )
+            )
+        except SnapshotNotFoundError:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Snapshot '{name}' not found",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+        except Exception as e:
+            await self._mount_and_scroll(
+                ErrorMessage(
+                    f"Failed to restore snapshot: {e}",
+                    collapsed=self._tools_collapsed,
+                )
+            )
+
+    def _refresh_branch_display(self) -> None:
+        """Refresh the branch display widget after branch operations."""
+        try:
+            branch_display = self.query_one(BranchDisplay)
+            branch_display.refresh_display()
+        except Exception:
+            # If widget not found or error, silently ignore
+            pass
 
     def _get_session_resume_info(self) -> str | None:
         if not self.agent_loop.session_logger.enabled:

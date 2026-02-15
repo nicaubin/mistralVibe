@@ -31,6 +31,7 @@ from vibe.core.middleware import (
     TurnLimitMiddleware,
 )
 from vibe.core.prompts import UtilityPrompt
+from vibe.core.session.branch_manager import BranchManager
 from vibe.core.session.session_logger import SessionLogger
 from vibe.core.session.session_migration import migrate_sessions_entrypoint
 from vibe.core.skills.manager import SkillManager
@@ -129,6 +130,7 @@ class AgentLoop:
         max_price: float | None = None,
         backend: BackendLike | None = None,
         enable_streaming: bool = False,
+        branch_manager: BranchManager | None = None,
     ) -> None:
         self._base_config = config
         self._max_turns = max_turns
@@ -174,6 +176,9 @@ class AgentLoop:
 
         self.session_logger = SessionLogger(config.session_logging, self.session_id)
         self._teleport_service: TeleportService | None = None
+
+        # Initialize branch manager
+        self.branch_manager = branch_manager or BranchManager(self.session_id)
 
         thread = Thread(
             target=migrate_sessions_entrypoint,
@@ -225,6 +230,7 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
+            self.branch_manager,
         )
 
     async def _flush_new_messages(self) -> None:
@@ -600,6 +606,11 @@ class AgentLoop:
 
                 self.stats.tool_calls_succeeded += 1
 
+                # Track file changes for branching
+                self._track_file_changes_from_tool_result(
+                    tool_call.tool_name, result_model
+                )
+
             except asyncio.CancelledError:
                 cancel = str(
                     get_user_cancellation_message(CancellationReason.TOOL_INTERRUPTED)
@@ -637,6 +648,34 @@ class AgentLoop:
                 self.format_handler.create_tool_response_message(tool_call, text)
             )
         )
+
+    def _track_file_changes_from_tool_result(
+        self, tool_name: str, result: BaseModel
+    ) -> None:
+        """Track file changes from tool execution results.
+
+        Args:
+            tool_name: Name of the tool that was executed
+            result: Tool result model
+        """
+        if tool_name == "write_file":
+            # WriteFile tool returns WriteFileResult with 'path' and 'file_existed'
+            result_dict = result.model_dump()
+            file_path = result_dict.get("path")
+            file_existed = result_dict.get("file_existed", False)
+
+            if file_path:
+                operation = "modified" if file_existed else "created"
+                self.branch_manager.track_file_change(file_path, operation)
+
+        elif tool_name == "search_replace":
+            # SearchReplace tool returns SearchReplaceResult with 'path' and 'applied'
+            result_dict = result.model_dump()
+            file_path = result_dict.get("path")
+            applied = result_dict.get("applied", 0)
+
+            if file_path and applied > 0:
+                self.branch_manager.track_file_change(file_path, "modified")
 
     async def _chat(self, max_tokens: int | None = None) -> LLMChunk:
         active_model = self.config.get_active_model()
@@ -871,6 +910,7 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
+            self.branch_manager,
         )
         self.messages = self.messages[:1]
 
@@ -899,6 +939,7 @@ class AgentLoop:
                 self._base_config,
                 self.tool_manager,
                 self.agent_profile,
+                self.branch_manager,
             )
 
             summary_request = UtilityPrompt.COMPACT.read()
@@ -935,6 +976,7 @@ class AgentLoop:
                 self._base_config,
                 self.tool_manager,
                 self.agent_profile,
+                self.branch_manager,
             )
 
             self.middleware_pipeline.reset(reset_reason=ResetReason.COMPACT)
@@ -948,6 +990,7 @@ class AgentLoop:
                 self._base_config,
                 self.tool_manager,
                 self.agent_profile,
+                self.branch_manager,
             )
             raise
 
@@ -975,6 +1018,7 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
+            self.branch_manager,
         )
 
         if base_config is not None:
@@ -1026,4 +1070,5 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
+            self.branch_manager,
         )

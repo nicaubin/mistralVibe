@@ -67,6 +67,46 @@ class CommandRegistry:
                 description="Teleport session to Vibe Nuage",
                 handler="_teleport_command",
             ),
+            "branch": Command(
+                aliases=frozenset(["/branch"]),
+                description="Create a new conversation branch",
+                handler="_branch_create",
+            ),
+            "branches": Command(
+                aliases=frozenset(["/branches"]),
+                description="List all conversation branches",
+                handler="_branch_list",
+            ),
+            "switch": Command(
+                aliases=frozenset(["/switch"]),
+                description="Switch to a different branch",
+                handler="_branch_switch",
+            ),
+            "merge": Command(
+                aliases=frozenset(["/merge"]),
+                description="Merge a branch (not yet implemented)",
+                handler="_branch_merge",
+            ),
+            "snapshot": Command(
+                aliases=frozenset(["/snapshot"]),
+                description="Create a snapshot of current state",
+                handler="_snapshot_create",
+            ),
+            "snapshots": Command(
+                aliases=frozenset(["/snapshots"]),
+                description="List all snapshots",
+                handler="_snapshot_list",
+            ),
+            "restore": Command(
+                aliases=frozenset(["/restore"]),
+                description="Restore from a snapshot",
+                handler="_snapshot_restore",
+            ),
+            "branch-delete": Command(
+                aliases=frozenset(["/branch-delete"]),
+                description="Delete a branch",
+                handler="_branch_delete",
+            ),
         }
 
         for command in excluded_commands:

@@ -4,11 +4,16 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from vibe.core.session.session_logger import MESSAGES_FILENAME, METADATA_FILENAME
+from vibe.core.session.session_logger import (
+    BRANCHES_FILENAME,
+    MESSAGES_FILENAME,
+    METADATA_FILENAME,
+)
 from vibe.core.types import LLMMessage
 
 if TYPE_CHECKING:
     from vibe.core.config import SessionLoggingConfig
+    from vibe.core.session.branch_manager import BranchManager
 
 
 class SessionLoader:
@@ -155,3 +160,33 @@ class SessionLoader:
             metadata = {}
 
         return messages, metadata
+
+    @staticmethod
+    def load_branches(filepath: Path) -> BranchManager | None:
+        """Load branch manager state from session directory.
+
+        Args:
+            filepath: Path to session directory
+
+        Returns:
+            BranchManager instance if branches.json exists, None otherwise
+        """
+        from vibe.core.session.branch_manager import BranchManager
+
+        branches_filepath = filepath / BRANCHES_FILENAME
+
+        if not branches_filepath.exists():
+            return None
+
+        try:
+            with branches_filepath.open("r", encoding="utf-8", errors="ignore") as f:
+                branches_data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            # If branches file is corrupted, return None to use default main branch
+            return None
+
+        try:
+            return BranchManager.deserialize(branches_data)
+        except Exception:
+            # If deserialization fails, return None to use default main branch
+            return None

@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Conversation Branching (MVP)**: Create and manage multiple conversation branches to explore different solution approaches in parallel
+  - `/branch <name>` - Create a new conversation branch from current point
+  - `/branches` - List all branches with message and file change counts
+  - `/branches --status` - Display branch tree visualization with hierarchy
+  - `/switch <name>` - Switch between branches
+  - `/branch-delete <name>` - Delete a branch
+  - `/snapshot <name>` - Create a snapshot of current branch state
+  - `/snapshots` - List all snapshots
+  - `/restore <name>` - Restore from a snapshot
+  - Branch indicator in UI bottom bar showing current active branch
+  - Automatic file change tracking per branch for write_file and search_replace tools
+  - Branch state persists across session saves and continues
+  - Each branch maintains separate conversation history and file deltas
+  - Note: Branch merging is planned for a future release
+
+## [Unreleased]
+
+### Changed
+
+- Refreshed API key onboarding screen text with more welcoming and modern language
+
 ## [2.1.0] - 2026-02-11
 
 ### Added
