@@ -8,9 +8,12 @@ and tracking file changes.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from vibe.core.session.branch import Branch, FileDelta, Snapshot
+
+MAX_FILE_CONTENT_SIZE = 100 * 1024  # 100KB
 
 
 class BranchManagerError(Exception):
@@ -188,18 +191,148 @@ class BranchManager:
     ) -> None:
         """Track a file change in the current branch.
 
+        Preserves original_content and current_content from existing deltas
+        so that content captured before/after tool execution is not lost.
+
         Args:
             file_path: Path to the file that changed
             operation: Type of operation ('modified', 'created', 'deleted')
             line_changes: Tuple of (additions, deletions)
         """
+        existing = self.active_branch.file_deltas.get(file_path)
         delta = FileDelta(
             path=file_path,
             operation=operation,
             timestamp=datetime.now(),
             line_changes=line_changes,
+            original_content=existing.original_content if existing else None,
+            current_content=existing.current_content if existing else None,
+            content_too_large=existing.content_too_large if existing else False,
         )
         self.active_branch.file_deltas[file_path] = delta
+
+    def _read_file_content(self, file_path: str) -> tuple[str | None, bool]:
+        """Read file content if it exists and is within size limits.
+
+        Returns:
+            Tuple of (content_or_none, too_large_flag)
+        """
+        try:
+            path = Path(file_path)
+            if not path.is_file():
+                return None, False
+            size = path.stat().st_size
+            if size > MAX_FILE_CONTENT_SIZE:
+                return None, True
+            return path.read_text(encoding="utf-8"), False
+        except (OSError, UnicodeDecodeError):
+            return None, False
+
+    def capture_file_before_modification(self, file_path: str) -> None:
+        """Capture original file content before first modification on this branch.
+
+        No-op if a delta already exists for this file (original already captured).
+        """
+        if file_path in self.active_branch.file_deltas:
+            return
+        content, too_large = self._read_file_content(file_path)
+        # Create a placeholder delta to store the original content.
+        # The real operation/line_changes will be set by track_file_change later.
+        delta = FileDelta(
+            path=file_path,
+            operation="pending",
+            original_content=content,
+            content_too_large=too_large,
+        )
+        self.active_branch.file_deltas[file_path] = delta
+
+    def update_file_current_content(self, file_path: str) -> None:
+        """Read modified file from disk and update delta's current_content."""
+        delta = self.active_branch.file_deltas.get(file_path)
+        if delta is None:
+            return
+        content, too_large = self._read_file_content(file_path)
+        delta.current_content = content
+        if too_large:
+            delta.content_too_large = True
+
+    def save_current_branch_files(self) -> None:
+        """Re-read all tracked files from disk into current_content.
+
+        Call before switching away from a branch to capture any manual edits.
+        """
+        for file_path, delta in self.active_branch.file_deltas.items():
+            if delta.content_too_large:
+                continue
+            content, too_large = self._read_file_content(file_path)
+            delta.current_content = content
+            if too_large:
+                delta.content_too_large = True
+
+    def restore_branch_files(self, branch_name: str) -> list[str]:
+        """Write current_content to disk for all tracked files in the given branch.
+
+        Args:
+            branch_name: Name of branch whose files to restore
+
+        Returns:
+            List of warning messages for files that couldn't be restored
+        """
+        warnings: list[str] = []
+        branch = self.get_branch(branch_name)
+        for file_path, delta in branch.file_deltas.items():
+            if delta.content_too_large:
+                warnings.append(f"Skipped '{file_path}': file too large to restore")
+                continue
+            if delta.current_content is None:
+                continue
+            try:
+                path = Path(file_path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(delta.current_content, encoding="utf-8")
+            except OSError as e:
+                warnings.append(f"Failed to restore '{file_path}': {e}")
+        return warnings
+
+    def restore_files_for_leaving_branch(
+        self, old_branch_name: str, new_branch_name: str
+    ) -> list[str]:
+        """For files only in the OLD branch, restore original state.
+
+        - If file was created on old branch: delete it
+        - If file was modified on old branch: restore original_content
+
+        Args:
+            old_branch_name: Branch we're leaving
+            new_branch_name: Branch we're switching to
+
+        Returns:
+            List of warning messages
+        """
+        warnings: list[str] = []
+        old_branch = self.get_branch(old_branch_name)
+        new_branch = self.get_branch(new_branch_name)
+        new_files = set(new_branch.file_deltas.keys())
+
+        for file_path, delta in old_branch.file_deltas.items():
+            if file_path in new_files:
+                continue
+            if delta.content_too_large:
+                warnings.append(
+                    f"Skipped reverting '{file_path}': file too large"
+                )
+                continue
+            try:
+                path = Path(file_path)
+                if delta.operation == "created":
+                    if path.is_file():
+                        path.unlink()
+                elif delta.original_content is not None:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(delta.original_content, encoding="utf-8")
+            except OSError as e:
+                warnings.append(f"Failed to revert '{file_path}': {e}")
+        return warnings
 
     def create_snapshot(
         self,

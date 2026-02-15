@@ -268,6 +268,7 @@ class VibeApp(App):  # noqa: PLR0904
                 safety=self.agent_loop.agent_profile.safety,
                 agent_name=self.agent_loop.agent_profile.display_name.lower(),
                 skill_entries_getter=self._get_skill_entries,
+                branch_names_getter=self._get_branch_names,
                 nuage_enabled=self.config.nuage_enabled,
             )
 
@@ -474,6 +475,11 @@ class VibeApp(App):  # noqa: PLR0904
             for name, info in self.agent_loop.skill_manager.available_skills.items()
             if info.user_invocable
         ]
+
+    def _get_branch_names(self) -> list[str]:
+        if not self.agent_loop:
+            return []
+        return [b.name for b in self.agent_loop.branch_manager.list_branches()]
 
     async def _handle_skill(self, user_input: str) -> bool:
         if not user_input.startswith("/"):
@@ -971,10 +977,11 @@ class VibeApp(App):  # noqa: PLR0904
             branch = self.agent_loop.branch_manager.create_branch(
                 name, description=description
             )
+            self.agent_loop.switch_branch(name)
             self._refresh_branch_display()
             await self._mount_and_scroll(
                 UserCommandMessage(
-                    f"Created branch **{name}** from **{branch.parent}** at message #{branch.fork_point}"
+                    f"Created and switched to branch **{name}** from **{branch.parent}** at message #{branch.fork_point}"
                 )
             )
         except BranchAlreadyExistsError:
@@ -1037,14 +1044,15 @@ class VibeApp(App):  # noqa: PLR0904
             from vibe.core.session.branch_manager import BranchNotFoundError
 
             old_branch = self.agent_loop.branch_manager.active_branch_name
-            self.agent_loop.switch_branch(name)
+            warnings = self.agent_loop.switch_branch(name)
             self._refresh_branch_display()
 
-            await self._mount_and_scroll(
-                UserCommandMessage(
-                    f"Switched from **{old_branch}** to **{name}**"
+            msg = f"Switched from **{old_branch}** to **{name}**"
+            if warnings:
+                msg += "\n\n**Warnings:**\n" + "\n".join(
+                    f"- {w}" for w in warnings
                 )
-            )
+            await self._mount_and_scroll(UserCommandMessage(msg))
         except BranchNotFoundError:
             await self._mount_and_scroll(
                 ErrorMessage(

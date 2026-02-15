@@ -572,6 +572,10 @@ class AgentLoop:
 
             self.stats.tool_calls_agreed += 1
 
+            self._capture_file_before_tool_execution(
+                tool_call.tool_name, tool_call
+            )
+
             try:
                 start_time = time.perf_counter()
                 result_model = None
@@ -653,6 +657,21 @@ class AgentLoop:
             )
         )
 
+    def _capture_file_before_tool_execution(
+        self, tool_name: str, tool_call: ResolvedToolCall
+    ) -> None:
+        """Capture file content before a file-modifying tool runs."""
+        if tool_name not in ("write_file", "search_replace"):
+            return
+        args = tool_call.args_dict
+        # write_file uses 'path', search_replace uses 'file_path'
+        file_path = args.get("path") or args.get("file_path")
+        if file_path:
+            from pathlib import Path
+
+            resolved = str(Path(file_path).resolve())
+            self.branch_manager.capture_file_before_modification(resolved)
+
     def _track_file_changes_from_tool_result(
         self, tool_name: str, result: BaseModel
     ) -> None:
@@ -671,15 +690,17 @@ class AgentLoop:
             if file_path:
                 operation = "modified" if file_existed else "created"
                 self.branch_manager.track_file_change(file_path, operation)
+                self.branch_manager.update_file_current_content(file_path)
 
         elif tool_name == "search_replace":
-            # SearchReplace tool returns SearchReplaceResult with 'path' and 'applied'
+            # SearchReplace tool returns SearchReplaceResult with 'file' and 'blocks_applied'
             result_dict = result.model_dump()
-            file_path = result_dict.get("path")
-            applied = result_dict.get("applied", 0)
+            file_path = result_dict.get("file")
+            blocks_applied = result_dict.get("blocks_applied", 0)
 
-            if file_path and applied > 0:
+            if file_path and blocks_applied > 0:
                 self.branch_manager.track_file_change(file_path, "modified")
+                self.branch_manager.update_file_current_content(file_path)
 
     async def _chat(self, max_tokens: int | None = None) -> LLMChunk:
         active_model = self.config.get_active_model()
@@ -998,34 +1019,53 @@ class AgentLoop:
             )
             raise
 
-    def switch_branch(self, name: str) -> None:
-        """Switch conversation context to a different branch.
+    def switch_branch(self, name: str) -> list[str]:
+        """Switch conversation context and files to a different branch.
+
+        Saves current branch's file state, switches branches, restores
+        the target branch's files, and reverts files unique to the old branch.
 
         Args:
             name: Name of branch to switch to
 
+        Returns:
+            List of warning messages (e.g. files too large to restore)
+
         Raises:
             BranchNotFoundError: If branch does not exist
         """
+        warnings: list[str] = []
+        old_branch_name = self.branch_manager.active_branch_name
+
         # Extract system message (always first message if role is system)
         system_message = None
         if len(self.messages) > 0 and self.messages[0].role == Role.system:
             system_message = self.messages[0]
 
-        # Current branch's messages are already kept in sync by add_message()
-        # No need to manually save - they're already stored correctly
+        # 1. Save current branch's file state from disk
+        self.branch_manager.save_current_branch_files()
 
-        # Switch to target branch
+        # 2. Switch to target branch
         target_branch = self.branch_manager.switch_branch(name)
 
-        # Load target branch's full history
-        target_history = target_branch.get_full_history(self.branch_manager)
+        # 3. Restore target branch's files to disk
+        warnings.extend(self.branch_manager.restore_branch_files(name))
 
-        # Rebuild messages: system message + target branch history
+        # 4. Revert files that only exist in the old branch
+        warnings.extend(
+            self.branch_manager.restore_files_for_leaving_branch(
+                old_branch_name, name
+            )
+        )
+
+        # 5. Rebuild messages from target branch history
+        target_history = target_branch.get_full_history(self.branch_manager)
         if system_message:
             self.messages = [system_message] + target_history
         else:
             self.messages = target_history
+
+        return warnings
 
     async def switch_agent(self, agent_name: str) -> None:
         if agent_name == self.agent_profile.name:

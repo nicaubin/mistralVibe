@@ -22,17 +22,10 @@ class BranchDisplay(NoMarkupStatic):
     def _update_display(self) -> None:
         """Update the display with current branch info."""
         active_branch = self._branch_manager.active_branch
-        branch_name = active_branch.name
-
-        # Show branch name, optionally with stats if not on main
-        if branch_name == "main":
-            display_text = f"branch: {branch_name}"
-        else:
-            msg_count = active_branch.total_messages
-            file_count = active_branch.total_file_changes
-            display_text = f"branch: {branch_name} (+{msg_count} msgs, {file_count} files)"
-
-        self.update(display_text)
+        name = active_branch.name
+        msgs = active_branch.total_messages
+        files = active_branch.total_file_changes
+        self.update(f"branch: {name} ({msgs} msgs, {files} files)")
 
     def refresh_display(self) -> None:
         """Refresh the display (call after branch operations)."""

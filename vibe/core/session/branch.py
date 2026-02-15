@@ -29,6 +29,9 @@ class FileDelta(BaseModel):
     operation: str  # 'modified' | 'created' | 'deleted'
     timestamp: datetime = Field(default_factory=datetime.now)
     line_changes: tuple[int, int] = (0, 0)  # (additions, deletions)
+    original_content: str | None = None  # file content before first modification
+    current_content: str | None = None  # file content after latest modification
+    content_too_large: bool = False  # True if file exceeded size limit
 
 
 class Branch(BaseModel):
