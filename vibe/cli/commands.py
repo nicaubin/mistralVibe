@@ -67,38 +67,38 @@ class CommandRegistry:
                 description="Teleport session to Vibe Nuage",
                 handler="_teleport_command",
             ),
-            "branch": Command(
-                aliases=frozenset(["/branch"]),
+            "branch-create": Command(
+                aliases=frozenset(["/branch-create"]),
                 description="Create a new conversation branch",
                 handler="_branch_create",
             ),
-            "branches": Command(
-                aliases=frozenset(["/branches"]),
+            "branch-list": Command(
+                aliases=frozenset(["/branch-list"]),
                 description="List all conversation branches",
                 handler="_branch_list",
             ),
-            "switch": Command(
-                aliases=frozenset(["/switch"]),
+            "branch-switch": Command(
+                aliases=frozenset(["/branch-switch"]),
                 description="Switch to a different branch",
                 handler="_branch_switch",
             ),
-            "merge": Command(
-                aliases=frozenset(["/merge"]),
+            "branch-merge": Command(
+                aliases=frozenset(["/branch-merge"]),
                 description="Merge a branch (not yet implemented)",
                 handler="_branch_merge",
             ),
-            "snapshot": Command(
-                aliases=frozenset(["/snapshot"]),
+            "branch-snapshot": Command(
+                aliases=frozenset(["/branch-snapshot"]),
                 description="Create a snapshot of current state",
                 handler="_snapshot_create",
             ),
-            "snapshots": Command(
-                aliases=frozenset(["/snapshots"]),
+            "branch-snapshots": Command(
+                aliases=frozenset(["/branch-snapshots"]),
                 description="List all snapshots",
                 handler="_snapshot_list",
             ),
-            "restore": Command(
-                aliases=frozenset(["/restore"]),
+            "branch-restore": Command(
+                aliases=frozenset(["/branch-restore"]),
                 description="Restore from a snapshot",
                 handler="_snapshot_restore",
             ),
@@ -117,9 +117,26 @@ class CommandRegistry:
             for alias in cmd.aliases:
                 self._alias_map[alias] = cmd_name
 
-    def find_command(self, user_input: str) -> Command | None:
-        cmd_name = self._alias_map.get(user_input.lower().strip())
-        return self.commands.get(cmd_name) if cmd_name else None
+    def find_command(self, user_input: str) -> tuple[Command, str] | None:
+        """Find a command matching the input, returning (command, args) or None."""
+        stripped = user_input.strip()
+        lower = stripped.lower()
+
+        # Try exact match first (commands with no args)
+        cmd_name = self._alias_map.get(lower)
+        if cmd_name:
+            return self.commands[cmd_name], ""
+
+        # Try prefix match: split on first space to extract command and args
+        first_space = lower.find(" ")
+        if first_space > 0:
+            cmd_part = lower[:first_space]
+            cmd_name = self._alias_map.get(cmd_part)
+            if cmd_name:
+                args = stripped[first_space:].strip()
+                return self.commands[cmd_name], args
+
+        return None
 
     def get_help_text(self) -> str:
         lines: list[str] = [

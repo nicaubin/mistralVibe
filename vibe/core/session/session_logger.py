@@ -321,9 +321,8 @@ class SessionLogger:
             return
 
         branches_data = branch_manager.serialize()
-        await SessionLogger.persist_metadata(branches_data, self.session_dir)
 
-        # Also write to branches.json specifically
+        # Write to branches.json
         branches_filepath = self.branches_filepath
         temp_branches_filepath = None
         try:

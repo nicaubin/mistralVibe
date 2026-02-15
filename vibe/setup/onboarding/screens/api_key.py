@@ -49,7 +49,7 @@ class ApiKeyScreen(OnboardingScreen):
             return
 
         help_url, help_name = PROVIDER_HELP[self.provider.name]
-        yield NoMarkupStatic(f"Grab your {provider_name} API key from the {help_name}:")
+        yield NoMarkupStatic(f"Get your {provider_name} API key from {help_name}:")
         yield Center(
             Horizontal(
                 NoMarkupStatic("→ ", classes="link-chevron"),
@@ -59,7 +59,7 @@ class ApiKeyScreen(OnboardingScreen):
         )
 
     def _compose_config_docs(self) -> ComposeResult:
-        yield Static("[dim]Learn more about Vibe configuration:[/]")
+        yield Static("[dim]Need help with configuration?[/]")
         yield Horizontal(
             NoMarkupStatic("→ ", classes="link-chevron"),
             Link(CONFIG_DOCS_URL, url=CONFIG_DOCS_URL),
@@ -72,18 +72,18 @@ class ApiKeyScreen(OnboardingScreen):
         self.input_widget = Input(
             password=True,
             id="key",
-            placeholder="Paste your API key here",
-            validators=[Length(minimum=1, failure_description="No API key provided.")],
+            placeholder="Enter your API key",
+            validators=[Length(minimum=1, failure_description="API key is required.")],
         )
 
         with Vertical(id="api-key-outer"):
             yield NoMarkupStatic("", classes="spacer")
-            yield Center(NoMarkupStatic("One last thing...", id="api-key-title"))
+            yield Center(NoMarkupStatic("Welcome to Mistral Vibe refactored", id="api-key-title"))
             with Center():
                 with Vertical(id="api-key-content"):
                     yield from self._compose_provider_link(provider_name)
                     yield NoMarkupStatic(
-                        "...and paste it below to finish the setup:", id="paste-hint"
+                        "Paste your key below to get started:", id="paste-hint"
                     )
                     yield Center(Horizontal(self.input_widget, id="input-box"))
                     yield NoMarkupStatic("", id="feedback")
@@ -107,7 +107,7 @@ class ApiKeyScreen(OnboardingScreen):
         feedback.remove_class("error", "success")
 
         if event.validation_result.is_valid:
-            feedback.update("Press Enter to submit ↵")
+            feedback.update("Hit Enter to continue ↵")
             feedback.add_class("success")
             input_box.add_class("valid")
             return

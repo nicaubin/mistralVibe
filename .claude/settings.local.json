@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(git remote rename:*)",
+      "Bash(git remote add:*)",
+      "Bash(uv:*)",
+      "Bash(powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\")",
+      "Bash(export PATH=\"$HOME/.local/bin:$PATH\")",
+      "Bash(powershell:*)",
+      "Bash(tree:*)",
+      "Bash(git checkout:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python:*)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

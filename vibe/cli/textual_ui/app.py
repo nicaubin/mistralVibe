@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from enum import StrEnum, auto
+import inspect
 from pathlib import Path
 import subprocess
 import time
@@ -451,13 +452,17 @@ class VibeApp(App):  # noqa: PLR0904
         )
 
     async def _handle_command(self, user_input: str) -> bool:
-        if command := self.commands.find_command(user_input):
+        if result := self.commands.find_command(user_input):
+            command, args = result
             await self._mount_and_scroll(UserMessage(user_input))
             handler = getattr(self, command.handler)
+            # Only pass args if the handler accepts them
+            sig = inspect.signature(handler)
+            takes_args = len(sig.parameters) > 0
             if asyncio.iscoroutinefunction(handler):
-                await handler()
+                await (handler(args) if takes_args else handler())
             else:
-                handler()
+                handler(args) if takes_args else handler()
             return True
         return False
 
@@ -949,7 +954,7 @@ class VibeApp(App):  # noqa: PLR0904
         if not parts:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    "Usage: /branch <name> [--description <text>]",
+                    "Usage: /branch-create <name> [--description <text>]",
                     collapsed=self._tools_collapsed,
                 )
             )
@@ -1022,7 +1027,7 @@ class VibeApp(App):  # noqa: PLR0904
         if not name:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    "Usage: /switch <branch-name>",
+                    "Usage: /branch-switch <branch-name>",
                     collapsed=self._tools_collapsed,
                 )
             )
@@ -1032,7 +1037,7 @@ class VibeApp(App):  # noqa: PLR0904
             from vibe.core.session.branch_manager import BranchNotFoundError
 
             old_branch = self.agent_loop.branch_manager.active_branch_name
-            self.agent_loop.branch_manager.switch_branch(name)
+            self.agent_loop.switch_branch(name)
             self._refresh_branch_display()
 
             await self._mount_and_scroll(
@@ -1105,7 +1110,7 @@ class VibeApp(App):  # noqa: PLR0904
         if not parts:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    "Usage: /snapshot <name> [--description <text>]",
+                    "Usage: /branch-snapshot <name> [--description <text>]",
                     collapsed=self._tools_collapsed,
                 )
             )
@@ -1167,7 +1172,7 @@ class VibeApp(App):  # noqa: PLR0904
         if not name:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    "Usage: /restore <snapshot-name>",
+                    "Usage: /branch-restore <snapshot-name>",
                     collapsed=self._tools_collapsed,
                 )
             )

@@ -222,6 +222,10 @@ class AgentLoop:
 
     def add_message(self, message: LLMMessage) -> None:
         self.messages.append(message)
+        if self.branch_manager:
+            # Don't store system messages in branch history
+            if message.role != Role.system:
+                self.branch_manager.active_branch.messages.append(message)
 
     async def _save_messages(self) -> None:
         await self.session_logger.save_interaction(
@@ -378,7 +382,7 @@ class AgentLoop:
 
     async def _conversation_loop(self, user_msg: str) -> AsyncGenerator[BaseEvent]:
         user_message = LLMMessage(role=Role.user, content=user_msg)
-        self.messages.append(user_message)
+        self.add_message(user_message)
         self.stats.steps += 1
 
         if user_message.message_id is None:
@@ -517,7 +521,7 @@ class AgentLoop:
             )
 
             self.stats.tool_calls_failed += 1
-            self.messages.append(
+            self.add_message(
                 self.format_handler.create_failed_tool_response_message(
                     failed, error_msg
                 )
@@ -643,7 +647,7 @@ class AgentLoop:
                 continue
 
     def _append_tool_response(self, tool_call: ResolvedToolCall, text: str) -> None:
-        self.messages.append(
+        self.add_message(
             LLMMessage.model_validate(
                 self.format_handler.create_tool_response_message(tool_call, text)
             )
@@ -709,7 +713,7 @@ class AgentLoop:
             processed_message = self.format_handler.process_api_response_message(
                 result.message
             )
-            self.messages.append(processed_message)
+            self.add_message(processed_message)
             return LLMChunk(message=processed_message, usage=result.usage)
 
         except Exception as e:
@@ -759,7 +763,7 @@ class AgentLoop:
                 )
             self._update_stats(usage=usage, time_seconds=end_time - start_time)
 
-            self.messages.append(chunk_agg.message)
+            self.add_message(chunk_agg.message)
 
         except Exception as e:
             if _should_raise_rate_limit_error(e):
@@ -891,7 +895,7 @@ class AgentLoop:
         last_msg = self.messages[-1]
         if last_msg.role is Role.tool:
             empty_assistant_msg = LLMMessage(role=Role.assistant, content="Understood.")
-            self.messages.append(empty_assistant_msg)
+            self.add_message(empty_assistant_msg)
 
     def _reset_session(self) -> None:
         self.session_id = str(uuid4())
@@ -943,7 +947,7 @@ class AgentLoop:
             )
 
             summary_request = UtilityPrompt.COMPACT.read()
-            self.messages.append(LLMMessage(role=Role.user, content=summary_request))
+            self.add_message(LLMMessage(role=Role.user, content=summary_request))
             self.stats.steps += 1
 
             summary_result = await self._chat()
@@ -993,6 +997,35 @@ class AgentLoop:
                 self.branch_manager,
             )
             raise
+
+    def switch_branch(self, name: str) -> None:
+        """Switch conversation context to a different branch.
+
+        Args:
+            name: Name of branch to switch to
+
+        Raises:
+            BranchNotFoundError: If branch does not exist
+        """
+        # Extract system message (always first message if role is system)
+        system_message = None
+        if len(self.messages) > 0 and self.messages[0].role == Role.system:
+            system_message = self.messages[0]
+
+        # Current branch's messages are already kept in sync by add_message()
+        # No need to manually save - they're already stored correctly
+
+        # Switch to target branch
+        target_branch = self.branch_manager.switch_branch(name)
+
+        # Load target branch's full history
+        target_history = target_branch.get_full_history(self.branch_manager)
+
+        # Rebuild messages: system message + target branch history
+        if system_message:
+            self.messages = [system_message] + target_history
+        else:
+            self.messages = target_history
 
     async def switch_agent(self, agent_name: str) -> None:
         if agent_name == self.agent_profile.name:

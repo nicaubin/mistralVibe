@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Conversation Branching**: Branch switching now properly swaps conversation context - the LLM now sees the correct branch history when switched (previously only the active branch name changed but the conversation stayed the same)
+
 ### Changed
 
 - Refreshed API key onboarding screen text with more welcoming and modern language
