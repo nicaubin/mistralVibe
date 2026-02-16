@@ -31,7 +31,7 @@ from vibe.core.middleware import (
     TurnLimitMiddleware,
 )
 from vibe.core.prompts import UtilityPrompt
-from vibe.core.session.branch_manager import BranchManager
+from vibe.core.session.thread_manager import ThreadManager
 from vibe.core.session.session_logger import SessionLogger
 from vibe.core.session.session_migration import migrate_sessions_entrypoint
 from vibe.core.skills.manager import SkillManager
@@ -130,7 +130,7 @@ class AgentLoop:
         max_price: float | None = None,
         backend: BackendLike | None = None,
         enable_streaming: bool = False,
-        branch_manager: BranchManager | None = None,
+        thread_manager: ThreadManager | None = None,
     ) -> None:
         self._base_config = config
         self._max_turns = max_turns
@@ -177,8 +177,8 @@ class AgentLoop:
         self.session_logger = SessionLogger(config.session_logging, self.session_id)
         self._teleport_service: TeleportService | None = None
 
-        # Initialize branch manager
-        self.branch_manager = branch_manager or BranchManager(self.session_id)
+        # Initialize thread manager
+        self.thread_manager = thread_manager or ThreadManager(self.session_id)
 
         thread = Thread(
             target=migrate_sessions_entrypoint,
@@ -222,10 +222,10 @@ class AgentLoop:
 
     def add_message(self, message: LLMMessage) -> None:
         self.messages.append(message)
-        if self.branch_manager:
-            # Don't store system messages in branch history
+        if self.thread_manager:
+            # Don't store system messages in thread history
             if message.role != Role.system:
-                self.branch_manager.active_branch.messages.append(message)
+                self.thread_manager.active_thread.messages.append(message)
 
     async def _save_messages(self) -> None:
         await self.session_logger.save_interaction(
@@ -234,7 +234,7 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
-            self.branch_manager,
+            self.thread_manager,
         )
 
     async def _flush_new_messages(self) -> None:
@@ -614,7 +614,7 @@ class AgentLoop:
 
                 self.stats.tool_calls_succeeded += 1
 
-                # Track file changes for branching
+                # Track file changes for threading
                 self._track_file_changes_from_tool_result(
                     tool_call.tool_name, result_model
                 )
@@ -670,7 +670,7 @@ class AgentLoop:
             from pathlib import Path
 
             resolved = str(Path(file_path).resolve())
-            self.branch_manager.capture_file_before_modification(resolved)
+            self.thread_manager.capture_file_before_modification(resolved)
 
     def _track_file_changes_from_tool_result(
         self, tool_name: str, result: BaseModel
@@ -689,8 +689,8 @@ class AgentLoop:
 
             if file_path:
                 operation = "modified" if file_existed else "created"
-                self.branch_manager.track_file_change(file_path, operation)
-                self.branch_manager.update_file_current_content(file_path)
+                self.thread_manager.track_file_change(file_path, operation)
+                self.thread_manager.update_file_current_content(file_path)
 
         elif tool_name == "search_replace":
             # SearchReplace tool returns SearchReplaceResult with 'file' and 'blocks_applied'
@@ -699,8 +699,8 @@ class AgentLoop:
             blocks_applied = result_dict.get("blocks_applied", 0)
 
             if file_path and blocks_applied > 0:
-                self.branch_manager.track_file_change(file_path, "modified")
-                self.branch_manager.update_file_current_content(file_path)
+                self.thread_manager.track_file_change(file_path, "modified")
+                self.thread_manager.update_file_current_content(file_path)
 
     async def _chat(self, max_tokens: int | None = None) -> LLMChunk:
         active_model = self.config.get_active_model()
@@ -935,7 +935,7 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
-            self.branch_manager,
+            self.thread_manager,
         )
         self.messages = self.messages[:1]
 
@@ -964,7 +964,7 @@ class AgentLoop:
                 self._base_config,
                 self.tool_manager,
                 self.agent_profile,
-                self.branch_manager,
+                self.thread_manager,
             )
 
             summary_request = UtilityPrompt.COMPACT.read()
@@ -1001,7 +1001,7 @@ class AgentLoop:
                 self._base_config,
                 self.tool_manager,
                 self.agent_profile,
-                self.branch_manager,
+                self.thread_manager,
             )
 
             self.middleware_pipeline.reset(reset_reason=ResetReason.COMPACT)
@@ -1015,51 +1015,51 @@ class AgentLoop:
                 self._base_config,
                 self.tool_manager,
                 self.agent_profile,
-                self.branch_manager,
+                self.thread_manager,
             )
             raise
 
-    def switch_branch(self, name: str) -> list[str]:
-        """Switch conversation context and files to a different branch.
+    def switch_thread(self, name: str) -> list[str]:
+        """Switch conversation context and files to a different thread.
 
-        Saves current branch's file state, switches branches, restores
-        the target branch's files, and reverts files unique to the old branch.
+        Saves current thread's file state, switches threads, restores
+        the target thread's files, and reverts files unique to the old thread.
 
         Args:
-            name: Name of branch to switch to
+            name: Name of thread to switch to
 
         Returns:
             List of warning messages (e.g. files too large to restore)
 
         Raises:
-            BranchNotFoundError: If branch does not exist
+            ThreadNotFoundError: If thread does not exist
         """
         warnings: list[str] = []
-        old_branch_name = self.branch_manager.active_branch_name
+        old_thread_name = self.thread_manager.active_thread_name
 
         # Extract system message (always first message if role is system)
         system_message = None
         if len(self.messages) > 0 and self.messages[0].role == Role.system:
             system_message = self.messages[0]
 
-        # 1. Save current branch's file state from disk
-        self.branch_manager.save_current_branch_files()
+        # 1. Save current thread's file state from disk
+        self.thread_manager.save_current_thread_files()
 
-        # 2. Switch to target branch
-        target_branch = self.branch_manager.switch_branch(name)
+        # 2. Switch to target thread
+        target_thread = self.thread_manager.switch_thread(name)
 
-        # 3. Restore target branch's files to disk
-        warnings.extend(self.branch_manager.restore_branch_files(name))
+        # 3. Restore target thread's files to disk
+        warnings.extend(self.thread_manager.restore_thread_files(name))
 
-        # 4. Revert files that only exist in the old branch
+        # 4. Revert files that only exist in the old thread
         warnings.extend(
-            self.branch_manager.restore_files_for_leaving_branch(
-                old_branch_name, name
+            self.thread_manager.restore_files_for_leaving_thread(
+                old_thread_name, name
             )
         )
 
-        # 5. Rebuild messages from target branch history
-        target_history = target_branch.get_full_history(self.branch_manager)
+        # 5. Rebuild messages from target thread history
+        target_history = target_thread.get_full_history(self.thread_manager)
         if system_message:
             self.messages = [system_message] + target_history
         else:
@@ -1091,7 +1091,7 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
-            self.branch_manager,
+            self.thread_manager,
         )
 
         if base_config is not None:
@@ -1143,5 +1143,5 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
-            self.branch_manager,
+            self.thread_manager,
         )

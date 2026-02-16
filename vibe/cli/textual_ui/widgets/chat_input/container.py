@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.message import Message
 
-from vibe.cli.autocompletion.branch_completion import BranchCompletionController
+from vibe.cli.autocompletion.thread_completion import ThreadCompletionController
 from vibe.cli.autocompletion.path_completion import PathCompletionController
 from vibe.cli.autocompletion.slash_command import SlashCommandController
 from vibe.cli.commands import CommandRegistry
@@ -43,7 +43,7 @@ class ChatInputContainer(Vertical):
         safety: AgentSafety = AgentSafety.NEUTRAL,
         agent_name: str = "",
         skill_entries_getter: Callable[[], list[tuple[str, str]]] | None = None,
-        branch_names_getter: Callable[[], list[str]] | None = None,
+        thread_names_getter: Callable[[], list[str]] | None = None,
         nuage_enabled: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -53,13 +53,13 @@ class ChatInputContainer(Vertical):
         self._safety = safety
         self._agent_name = agent_name
         self._skill_entries_getter = skill_entries_getter
-        self._branch_names_getter = branch_names_getter
+        self._thread_names_getter = thread_names_getter
         self._nuage_enabled = nuage_enabled
 
         controllers: list = []
-        if branch_names_getter:
+        if thread_names_getter:
             controllers.append(
-                BranchCompletionController(branch_names_getter, self)
+                ThreadCompletionController(thread_names_getter, self)
             )
         controllers.extend([
             SlashCommandController(CommandCompleter(self._get_slash_entries), self),

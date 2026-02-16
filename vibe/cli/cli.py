@@ -16,7 +16,7 @@ from vibe.core.config import (
 )
 from vibe.core.paths.config_paths import CONFIG_FILE, HISTORY_FILE
 from vibe.core.programmatic import run_programmatic
-from vibe.core.session.branch_manager import BranchManager
+from vibe.core.session.thread_manager import ThreadManager
 from vibe.core.session.session_loader import SessionLoader
 from vibe.core.types import LLMMessage, OutputFormat, Role
 from vibe.core.utils import ConversationLimitException, logger
@@ -75,7 +75,7 @@ def bootstrap_config_files() -> None:
 
 def load_session(
     args: argparse.Namespace, config: VibeConfig
-) -> tuple[list[LLMMessage], BranchManager | None] | None:
+) -> tuple[list[LLMMessage], ThreadManager | None] | None:
     if not args.continue_session and not args.resume:
         return None
 
@@ -108,8 +108,8 @@ def load_session(
 
     try:
         loaded_messages, _ = SessionLoader.load_session(session_to_load)
-        branch_manager = SessionLoader.load_branches(session_to_load)
-        return (loaded_messages, branch_manager)
+        loaded_thread_manager = SessionLoader.load_threads(session_to_load)
+        return (loaded_messages, loaded_thread_manager)
     except Exception as e:
         rprint(f"[red]Failed to load session: {e}[/]")
         sys.exit(1)
@@ -140,9 +140,9 @@ def run_cli(args: argparse.Namespace) -> None:
 
         session_data = load_session(args, config)
         loaded_messages = None
-        loaded_branch_manager = None
+        loaded_thread_manager = None
         if session_data:
-            loaded_messages, loaded_branch_manager = session_data
+            loaded_messages, loaded_thread_manager = session_data
 
         stdin_prompt = get_prompt_from_stdin()
         if args.prompt is not None:
@@ -180,7 +180,7 @@ def run_cli(args: argparse.Namespace) -> None:
                 config,
                 agent_name=initial_agent_name,
                 enable_streaming=True,
-                branch_manager=loaded_branch_manager,
+                thread_manager=loaded_thread_manager,
             )
 
             if loaded_messages:

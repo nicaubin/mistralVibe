@@ -26,6 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Conversation Threads**: Renamed "branches" to "threads" to avoid confusion with git terminology
+- **Conversation Threads**: Simplified commands down to 4 essentials:
+  - `/thread <name>` - Create a new conversation thread
+  - `/threads` - List all threads
+  - `/switch <name>` or `/thread-switch <name>` - Switch to a thread
+  - `/thread-delete <name>` - Delete a thread
+- **Conversation Threads**: Threads are now restored when resuming a session
+
+### Removed
+
+- Snapshot/restore commands (`/snapshot`, `/snapshots`, `/restore`)
+- Branch history and import commands
+- Merge command stub
+
 ### Fixed
 
 - **Conversation Branching**: Branch switching now properly swaps conversation context - the LLM now sees the correct branch history when switched (previously only the active branch name changed but the conversation stayed the same)

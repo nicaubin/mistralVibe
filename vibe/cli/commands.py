@@ -67,55 +67,25 @@ class CommandRegistry:
                 description="Teleport session to Vibe Nuage",
                 handler="_teleport_command",
             ),
-            "branch-create": Command(
-                aliases=frozenset(["/branch-create"]),
-                description="Create a new conversation branch",
-                handler="_branch_create",
+            "thread-create": Command(
+                aliases=frozenset(["/thread"]),
+                description="Create a new conversation thread",
+                handler="_thread_create",
             ),
-            "branch-list": Command(
-                aliases=frozenset(["/branch-list"]),
-                description="List all conversation branches",
-                handler="_branch_list",
+            "thread-list": Command(
+                aliases=frozenset(["/threads"]),
+                description="List all conversation threads",
+                handler="_thread_list",
             ),
-            "branch-switch": Command(
-                aliases=frozenset(["/branch-switch"]),
-                description="Switch to a different branch",
-                handler="_branch_switch",
+            "thread-switch": Command(
+                aliases=frozenset(["/thread-switch"]),
+                description="Switch to a different thread",
+                handler="_thread_switch",
             ),
-            "branch-merge": Command(
-                aliases=frozenset(["/branch-merge"]),
-                description="Merge a branch (not yet implemented)",
-                handler="_branch_merge",
-            ),
-            "branch-snapshot": Command(
-                aliases=frozenset(["/branch-snapshot"]),
-                description="Create a snapshot of current state",
-                handler="_snapshot_create",
-            ),
-            "branch-snapshots": Command(
-                aliases=frozenset(["/branch-snapshots"]),
-                description="List all snapshots",
-                handler="_snapshot_list",
-            ),
-            "branch-restore": Command(
-                aliases=frozenset(["/branch-restore"]),
-                description="Restore from a snapshot",
-                handler="_snapshot_restore",
-            ),
-            "branch-delete": Command(
-                aliases=frozenset(["/branch-delete"]),
-                description="Delete a branch",
-                handler="_branch_delete",
-            ),
-            "branch-history": Command(
-                aliases=frozenset(["/branch-history"]),
-                description="List branches from past sessions",
-                handler="_branch_history",
-            ),
-            "branch-import": Command(
-                aliases=frozenset(["/branch-import"]),
-                description="Import a branch from a past session",
-                handler="_branch_import",
+            "thread-delete": Command(
+                aliases=frozenset(["/thread-delete"]),
+                description="Delete a thread",
+                handler="_thread_delete",
             ),
         }
 

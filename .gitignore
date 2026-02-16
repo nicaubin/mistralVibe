@@ -65,6 +65,7 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 htmlcov/
+snapshot_report.html
 .tox/
 .nox/
 .coverage
@@ -199,3 +200,4 @@ result-*
 # Tests run the agent in the playground, we don't need to keep the session files
 tests/playground/*
 .
+.claude/settings.local.json

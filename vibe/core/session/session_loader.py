@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from vibe.core.session.session_logger import (
-    BRANCHES_FILENAME,
+    THREADS_FILENAME,
     MESSAGES_FILENAME,
     METADATA_FILENAME,
 )
@@ -13,8 +13,8 @@ from vibe.core.types import LLMMessage
 
 if TYPE_CHECKING:
     from vibe.core.config import SessionLoggingConfig
-    from vibe.core.session.branch import Branch
-    from vibe.core.session.branch_manager import BranchManager
+    from vibe.core.session.thread import Thread
+    from vibe.core.session.thread_manager import ThreadManager
 
 
 class SessionLoader:
@@ -163,40 +163,40 @@ class SessionLoader:
         return messages, metadata
 
     @staticmethod
-    def load_branches(filepath: Path) -> BranchManager | None:
-        """Load branch manager state from session directory.
+    def load_threads(filepath: Path) -> ThreadManager | None:
+        """Load thread manager state from session directory.
 
         Args:
             filepath: Path to session directory
 
         Returns:
-            BranchManager instance if branches.json exists, None otherwise
+            ThreadManager instance if threads.json exists, None otherwise
         """
-        from vibe.core.session.branch_manager import BranchManager
+        from vibe.core.session.thread_manager import ThreadManager
 
-        branches_filepath = filepath / BRANCHES_FILENAME
+        threads_filepath = filepath / THREADS_FILENAME
 
-        if not branches_filepath.exists():
+        if not threads_filepath.exists():
             return None
 
         try:
-            with branches_filepath.open("r", encoding="utf-8", errors="ignore") as f:
-                branches_data = json.load(f)
+            with threads_filepath.open("r", encoding="utf-8", errors="ignore") as f:
+                threads_data = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
-            # If branches file is corrupted, return None to use default main branch
+            # If threads file is corrupted, return None to use default main thread
             return None
 
         try:
-            return BranchManager.deserialize(branches_data)
+            return ThreadManager.deserialize(threads_data)
         except Exception:
-            # If deserialization fails, return None to use default main branch
+            # If deserialization fails, return None to use default main thread
             return None
 
     @staticmethod
-    def list_sessions_with_branches(
+    def list_sessions_with_threads(
         config: SessionLoggingConfig, limit: int = 10
     ) -> list[dict[str, Any]]:
-        """List recent sessions that contain branches.
+        """List recent sessions that contain threads.
 
         Args:
             config: Session logging configuration
@@ -204,7 +204,7 @@ class SessionLoader:
 
         Returns:
             List of dicts with session_dir, session_id, title, date,
-            and branches info, sorted by recency (newest first).
+            and threads info, sorted by recency (newest first).
         """
         save_dir = Path(config.save_dir)
         if not save_dir.exists():
@@ -215,19 +215,19 @@ class SessionLoader:
 
         results: list[dict[str, Any]] = []
         for session_dir in session_dirs:
-            branches_path = session_dir / BRANCHES_FILENAME
-            if not branches_path.is_file():
+            threads_path = session_dir / THREADS_FILENAME
+            if not threads_path.is_file():
                 continue
 
-            # Read branches data
+            # Read threads data
             try:
-                with branches_path.open("r", encoding="utf-8", errors="ignore") as f:
-                    branches_data = json.load(f)
+                with threads_path.open("r", encoding="utf-8", errors="ignore") as f:
+                    threads_data = json.load(f)
             except (OSError, json.JSONDecodeError):
                 continue
 
-            branches_info = branches_data.get("branches", {})
-            if not branches_info:
+            threads_info = threads_data.get("threads", {})
+            if not threads_info:
                 continue
 
             # Read metadata for title and date
@@ -247,12 +247,12 @@ class SessionLoader:
                 except (OSError, json.JSONDecodeError):
                     pass
 
-            # Extract session_id from branches data or dir name
-            session_id = branches_data.get("session_id", session_dir.name)
+            # Extract session_id from threads data or dir name
+            session_id = threads_data.get("session_id", session_dir.name)
 
-            branch_summaries = []
-            for name, bdata in branches_info.items():
-                branch_summaries.append(
+            thread_summaries = []
+            for name, bdata in threads_info.items():
+                thread_summaries.append(
                     {
                         "name": name,
                         "messages": len(bdata.get("messages", [])),
@@ -268,7 +268,7 @@ class SessionLoader:
                     "title": title,
                     "date": date,
                     "mtime": mtime,
-                    "branches": branch_summaries,
+                    "threads": thread_summaries,
                 }
             )
 
@@ -277,35 +277,35 @@ class SessionLoader:
         return results[:limit]
 
     @staticmethod
-    def load_branch_from_session(
-        session_dir: str, branch_name: str
-    ) -> Branch | None:
-        """Load a specific branch from a session directory.
+    def load_thread_from_session(
+        session_dir: str, thread_name: str
+    ) -> Thread | None:
+        """Load a specific thread from a session directory.
 
         Args:
             session_dir: Path to the session directory
-            branch_name: Name of the branch to load
+            thread_name: Name of the thread to load
 
         Returns:
-            Branch instance if found, None otherwise
+            Thread instance if found, None otherwise
         """
-        from vibe.core.session.branch import Branch
+        from vibe.core.session.thread import Thread
 
-        branches_path = Path(session_dir) / BRANCHES_FILENAME
-        if not branches_path.is_file():
+        threads_path = Path(session_dir) / THREADS_FILENAME
+        if not threads_path.is_file():
             return None
 
         try:
-            with branches_path.open("r", encoding="utf-8", errors="ignore") as f:
-                branches_data = json.load(f)
+            with threads_path.open("r", encoding="utf-8", errors="ignore") as f:
+                threads_data = json.load(f)
         except (OSError, json.JSONDecodeError):
             return None
 
-        branch_data = branches_data.get("branches", {}).get(branch_name)
-        if branch_data is None:
+        thread_data = threads_data.get("threads", {}).get(thread_name)
+        if thread_data is None:
             return None
 
         try:
-            return Branch.model_validate(branch_data)
+            return Thread.model_validate(thread_data)
         except Exception:
             return None

@@ -6,20 +6,20 @@ from textual import events
 
 from vibe.cli.autocompletion.base import CompletionResult, CompletionView
 
-_BRANCH_COMMANDS = ("/branch-switch ", "/branch-delete ")
+_THREAD_COMMANDS = ("/thread-switch ", "/thread-delete ")
 
 MAX_SUGGESTIONS_COUNT = 10
 
 
-class BranchCompletionController:
-    """Autocompletes branch names for /branch-switch and /branch-delete."""
+class ThreadCompletionController:
+    """Autocompletes thread names for /thread-switch, /switch, and /thread-delete."""
 
     def __init__(
         self,
-        branch_names_getter: Callable[[], list[str]],
+        thread_names_getter: Callable[[], list[str]],
         view: CompletionView,
     ) -> None:
-        self._get_branch_names = branch_names_getter
+        self._get_thread_names = thread_names_getter
         self._view = view
         self._suggestions: list[tuple[str, str]] = []
         self._selected_index = 0
@@ -27,7 +27,7 @@ class BranchCompletionController:
 
     def can_handle(self, text: str, cursor_index: int) -> bool:
         lower = text[:cursor_index].lower()
-        return any(lower.startswith(cmd) for cmd in _BRANCH_COMMANDS)
+        return any(lower.startswith(cmd) for cmd in _THREAD_COMMANDS)
 
     def reset(self) -> None:
         if self._suggestions:
@@ -39,7 +39,7 @@ class BranchCompletionController:
         self, text: str, cursor_index: int
     ) -> tuple[str, str] | None:
         lower = text[:cursor_index].lower()
-        for cmd in _BRANCH_COMMANDS:
+        for cmd in _THREAD_COMMANDS:
             if lower.startswith(cmd):
                 prefix = text[: len(cmd)]
                 partial = text[len(cmd) : cursor_index]
@@ -59,10 +59,10 @@ class BranchCompletionController:
         self._command_prefix, partial = parsed
         partial_lower = partial.lower()
 
-        branches = self._get_branch_names()
+        threads = self._get_thread_names()
         suggestions = [
             (name, "")
-            for name in branches
+            for name in threads
             if name.lower().startswith(partial_lower)
         ]
 
@@ -114,10 +114,8 @@ class BranchCompletionController:
     def _apply_selected(self, text: str, cursor_index: int) -> bool:
         if not self._suggestions:
             return False
-        branch_name, _ = self._suggestions[self._selected_index]
-        # Replace the argument portion (everything after the command prefix)
-        start = len(self._command_prefix)
-        replacement = self._command_prefix + branch_name
+        thread_name, _ = self._suggestions[self._selected_index]
+        replacement = self._command_prefix + thread_name
         self._view.replace_completion_range(0, cursor_index, replacement)
         self.reset()
         return True

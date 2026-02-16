@@ -52,8 +52,8 @@ from vibe.cli.textual_ui.widgets.messages import (
 )
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.path_display import PathDisplay
-from vibe.cli.textual_ui.widgets.branch_display import BranchDisplay
-from vibe.cli.textual_ui.widgets.branch_tree import BranchTreeWidget
+from vibe.cli.textual_ui.widgets.thread_display import ThreadDisplay
+from vibe.cli.textual_ui.widgets.thread_tree import ThreadTreeWidget
 from vibe.cli.textual_ui.widgets.question_app import QuestionApp
 from vibe.cli.textual_ui.widgets.teleport_message import TeleportMessage
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
@@ -268,13 +268,13 @@ class VibeApp(App):  # noqa: PLR0904
                 safety=self.agent_loop.agent_profile.safety,
                 agent_name=self.agent_loop.agent_profile.display_name.lower(),
                 skill_entries_getter=self._get_skill_entries,
-                branch_names_getter=self._get_branch_names,
+                thread_names_getter=self._get_thread_names,
                 nuage_enabled=self.config.nuage_enabled,
             )
 
         with Horizontal(id="bottom-bar"):
             yield PathDisplay(self.config.displayed_workdir or Path.cwd())
-            yield BranchDisplay(self.agent_loop.branch_manager)
+            yield ThreadDisplay(self.agent_loop.thread_manager)
             yield NoMarkupStatic(id="spacer")
             yield ContextProgress()
 
@@ -476,10 +476,10 @@ class VibeApp(App):  # noqa: PLR0904
             if info.user_invocable
         ]
 
-    def _get_branch_names(self) -> list[str]:
+    def _get_thread_names(self) -> list[str]:
         if not self.agent_loop:
             return []
-        return [b.name for b in self.agent_loop.branch_manager.list_branches()]
+        return [t.name for t in self.agent_loop.thread_manager.list_threads()]
 
     async def _handle_skill(self, user_input: str) -> bool:
         if not user_input.startswith("/"):
@@ -692,6 +692,7 @@ class VibeApp(App):  # noqa: PLR0904
             self._loading_widget = None
             await self._finalize_current_streaming_message()
             await self._refresh_windowing_from_history()
+            self._refresh_thread_display()
 
     async def _teleport_command(self) -> None:
         await self._handle_teleport_command(show_message=False)
@@ -954,409 +955,153 @@ class VibeApp(App):  # noqa: PLR0904
             if self.event_handler:
                 self.event_handler.current_compact = None
 
-    async def _branch_create(self, args: str = "") -> None:
-        """Create a new conversation branch."""
-        parts = args.strip().split(maxsplit=1)
-        if not parts:
+    async def _thread_create(self, args: str = "") -> None:
+        """Create a new conversation thread."""
+        name = args.strip()
+        if not name:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    "Usage: /branch-create <name> [--description <text>]",
+                    "Usage: /thread-create <name>",
                     collapsed=self._tools_collapsed,
                 )
             )
             return
 
-        name = parts[0]
-        description = ""
-        if len(parts) > 1 and "--description" in parts[1]:
-            description = parts[1].split("--description", 1)[1].strip()
+        from vibe.core.session.thread_manager import ThreadAlreadyExistsError
 
         try:
-            from vibe.core.session.branch_manager import BranchAlreadyExistsError
-
-            branch = self.agent_loop.branch_manager.create_branch(
-                name, description=description
-            )
-            self.agent_loop.switch_branch(name)
-            self._refresh_branch_display()
+            thread = self.agent_loop.thread_manager.create_thread(name)
+            self.agent_loop.switch_thread(name)
+            self._refresh_thread_display()
             await self._mount_and_scroll(
                 UserCommandMessage(
-                    f"Created and switched to branch **{name}** from **{branch.parent}** at message #{branch.fork_point}"
+                    f"Created and switched to thread **{name}** from **{thread.parent}**"
                 )
             )
-        except BranchAlreadyExistsError:
+        except ThreadAlreadyExistsError:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    f"Branch '{name}' already exists",
+                    f"Thread '{name}' already exists",
                     collapsed=self._tools_collapsed,
                 )
             )
         except Exception as e:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    f"Failed to create branch: {e}",
+                    f"Failed to create thread: {e}",
                     collapsed=self._tools_collapsed,
                 )
             )
 
-    async def _branch_list(self, args: str = "") -> None:
-        """List all conversation branches."""
+    async def _thread_list(self, args: str = "") -> None:
+        """List all conversation threads."""
         try:
             # Check if --status flag is present
             if "--status" in args:
-                tree_widget = BranchTreeWidget(self.agent_loop.branch_manager)
+                tree_widget = ThreadTreeWidget(self.agent_loop.thread_manager)
                 await self._mount_and_scroll(tree_widget)
             else:
-                branches = self.agent_loop.branch_manager.list_branches()
-                active_name = self.agent_loop.branch_manager.active_branch_name
+                threads = self.agent_loop.thread_manager.list_threads()
+                active_name = self.agent_loop.thread_manager.active_thread_name
 
-                output = ["## Conversation Branches\n"]
-                for branch in branches:
-                    is_active = " **[active]**" if branch.name == active_name else ""
-                    parent_info = f" (from {branch.parent})" if branch.parent else ""
+                output = ["## Conversation Threads\n"]
+                for thread in threads:
+                    is_active = " **[active]**" if thread.name == active_name else ""
+                    parent_info = f" (from {thread.parent})" if thread.parent else ""
                     output.append(
-                        f"- **{branch.name}**{is_active}{parent_info}: "
-                        f"{branch.total_messages} messages, {branch.total_file_changes} file changes"
+                        f"- **{thread.name}**{is_active}{parent_info}: "
+                        f"{thread.total_messages} messages, {thread.total_file_changes} file changes"
                     )
 
                 await self._mount_and_scroll(UserCommandMessage("\n".join(output)))
         except Exception as e:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    f"Failed to list branches: {e}",
+                    f"Failed to list threads: {e}",
                     collapsed=self._tools_collapsed,
                 )
             )
 
-    async def _branch_switch(self, args: str = "") -> None:
-        """Switch to a different branch."""
+    async def _thread_switch(self, args: str = "") -> None:
+        """Switch to a different thread."""
         name = args.strip()
         if not name:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    "Usage: /branch-switch <branch-name>",
+                    "Usage: /thread-switch <thread-name>",
                     collapsed=self._tools_collapsed,
                 )
             )
             return
 
+        from vibe.core.session.thread_manager import ThreadNotFoundError
+
         try:
-            from vibe.core.session.branch_manager import BranchNotFoundError
+            old_thread = self.agent_loop.thread_manager.active_thread_name
+            warnings = self.agent_loop.switch_thread(name)
+            self._refresh_thread_display()
 
-            old_branch = self.agent_loop.branch_manager.active_branch_name
-            warnings = self.agent_loop.switch_branch(name)
-            self._refresh_branch_display()
-
-            msg = f"Switched from **{old_branch}** to **{name}**"
+            msg = f"Switched from **{old_thread}** to **{name}**"
             if warnings:
                 msg += "\n\n**Warnings:**\n" + "\n".join(
                     f"- {w}" for w in warnings
                 )
             await self._mount_and_scroll(UserCommandMessage(msg))
-        except BranchNotFoundError:
+        except ThreadNotFoundError:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    f"Branch '{name}' not found",
+                    f"Thread '{name}' not found",
                     collapsed=self._tools_collapsed,
                 )
             )
         except Exception as e:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    f"Failed to switch branch: {e}",
+                    f"Failed to switch thread: {e}",
                     collapsed=self._tools_collapsed,
                 )
             )
 
-    async def _branch_merge(self, args: str = "") -> None:
-        """Merge a branch (not yet implemented in MVP)."""
-        await self._mount_and_scroll(
-            UserCommandMessage(
-                "Branch merging is not yet implemented in this MVP.\n\n"
-                "For now, you can switch between branches and copy changes manually."
-            )
-        )
-
-    async def _branch_delete(self, args: str = "") -> None:
-        """Delete a branch."""
+    async def _thread_delete(self, args: str = "") -> None:
+        """Delete a thread."""
         name = args.strip()
         if not name:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    "Usage: /branch-delete <branch-name>",
+                    "Usage: /thread-delete <thread-name>",
                     collapsed=self._tools_collapsed,
                 )
             )
             return
 
-        try:
-            from vibe.core.session.branch_manager import (
-                BranchManagerError,
-                BranchNotFoundError,
-            )
+        from vibe.core.session.thread_manager import (
+            ThreadManagerError,
+            ThreadNotFoundError,
+        )
 
-            self.agent_loop.branch_manager.delete_branch(name)
-            self._refresh_branch_display()
+        try:
+            self.agent_loop.thread_manager.delete_thread(name)
+            self._refresh_thread_display()
             await self._mount_and_scroll(
-                UserCommandMessage(f"Deleted branch **{name}**")
+                UserCommandMessage(f"Deleted thread **{name}**")
             )
-        except (BranchNotFoundError, BranchManagerError) as e:
+        except (ThreadNotFoundError, ThreadManagerError) as e:
             await self._mount_and_scroll(
                 ErrorMessage(str(e), collapsed=self._tools_collapsed)
             )
         except Exception as e:
             await self._mount_and_scroll(
                 ErrorMessage(
-                    f"Failed to delete branch: {e}",
+                    f"Failed to delete thread: {e}",
                     collapsed=self._tools_collapsed,
                 )
             )
 
-    async def _branch_history(self, args: str = "") -> None:
-        """List branches from past sessions."""
+    def _refresh_thread_display(self) -> None:
+        """Refresh the thread display widget after thread operations."""
         try:
-            from vibe.core.session.session_loader import SessionLoader
-
-            if not self.agent_loop.session_logger.enabled:
-                await self._mount_and_scroll(
-                    ErrorMessage(
-                        "Session logging is disabled — no history available.",
-                        collapsed=self._tools_collapsed,
-                    )
-                )
-                return
-
-            session_config = self.agent_loop.session_logger.session_config
-            sessions = SessionLoader.list_sessions_with_branches(session_config)
-
-            if not sessions:
-                await self._mount_and_scroll(
-                    UserCommandMessage(
-                        "No past sessions with branches found."
-                    )
-                )
-                return
-
-            lines = ["## Branch History (past sessions)\n"]
-            lines.append(
-                "| Session ID | Title | Date | Branches |"
-            )
-            lines.append(
-                "|------------|-------|------|----------|"
-            )
-            for s in sessions:
-                short_id = s["session_id"][:8]
-                title = s["title"][:40]
-                date = s["date"][:10] if s["date"] else "unknown"
-                branch_names = ", ".join(
-                    b["name"] for b in s["branches"]
-                )
-                lines.append(
-                    f"| `{short_id}` | {title} | {date} | {branch_names} |"
-                )
-
-            lines.append(
-                "\nUse `/branch-import <session_id> <branch_name>` to import a branch."
-            )
-            await self._mount_and_scroll(
-                UserCommandMessage("\n".join(lines))
-            )
-        except Exception as e:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Failed to list branch history: {e}",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-
-    async def _branch_import(self, args: str = "") -> None:
-        """Import a branch from a past session."""
-        parts = args.strip().split()
-        if len(parts) < 2:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    "Usage: /branch-import <session_id> <branch_name> [--as <new_name>]",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-            return
-
-        session_id = parts[0]
-        branch_name = parts[1]
-        new_name = None
-        if len(parts) >= 4 and parts[2] == "--as":
-            new_name = parts[3]
-
-        try:
-            from vibe.core.session.branch_manager import BranchAlreadyExistsError
-            from vibe.core.session.session_loader import SessionLoader
-
-            if not self.agent_loop.session_logger.enabled:
-                await self._mount_and_scroll(
-                    ErrorMessage(
-                        "Session logging is disabled — cannot import branches.",
-                        collapsed=self._tools_collapsed,
-                    )
-                )
-                return
-
-            session_config = self.agent_loop.session_logger.session_config
-            session_dir = SessionLoader.find_session_by_id(
-                session_id, session_config
-            )
-            if session_dir is None:
-                await self._mount_and_scroll(
-                    ErrorMessage(
-                        f"Session '{session_id}' not found.",
-                        collapsed=self._tools_collapsed,
-                    )
-                )
-                return
-
-            branch = SessionLoader.load_branch_from_session(
-                str(session_dir), branch_name
-            )
-            if branch is None:
-                await self._mount_and_scroll(
-                    ErrorMessage(
-                        f"Branch '{branch_name}' not found in session '{session_id}'.",
-                        collapsed=self._tools_collapsed,
-                    )
-                )
-                return
-
-            imported = self.agent_loop.branch_manager.import_branch(
-                branch, new_name=new_name
-            )
-            self._refresh_branch_display()
-            display_name = imported.name
-            await self._mount_and_scroll(
-                UserCommandMessage(
-                    f"Imported branch **{display_name}** from session `{session_id[:8]}` "
-                    f"({imported.total_messages} messages, {imported.total_file_changes} file deltas)"
-                )
-            )
-        except BranchAlreadyExistsError:
-            target = new_name or branch_name
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Branch '{target}' already exists. Use `--as <new_name>` to rename.",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-        except Exception as e:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Failed to import branch: {e}",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-
-    async def _snapshot_create(self, args: str = "") -> None:
-        """Create a snapshot of current state."""
-        parts = args.strip().split(maxsplit=1)
-        if not parts:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    "Usage: /branch-snapshot <name> [--description <text>]",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-            return
-
-        name = parts[0]
-        description = ""
-        if len(parts) > 1 and "--description" in parts[1]:
-            description = parts[1].split("--description", 1)[1].strip()
-
-        try:
-            snapshot = self.agent_loop.branch_manager.create_snapshot(
-                name, description=description
-            )
-            await self._mount_and_scroll(
-                UserCommandMessage(
-                    f"Created snapshot **{name}** of branch **{snapshot.branch_name}** "
-                    f"at message #{snapshot.message_id}"
-                )
-            )
-        except Exception as e:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Failed to create snapshot: {e}",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-
-    async def _snapshot_list(self, args: str = "") -> None:
-        """List all snapshots."""
-        try:
-            snapshots = self.agent_loop.branch_manager.list_snapshots()
-
-            if not snapshots:
-                await self._mount_and_scroll(
-                    UserCommandMessage("No snapshots created yet.")
-                )
-                return
-
-            output = ["## Snapshots\n"]
-            for snapshot in snapshots:
-                desc = f": {snapshot.description}" if snapshot.description else ""
-                output.append(
-                    f"- **{snapshot.name}** ({snapshot.branch_name} @ msg #{snapshot.message_id}){desc}"
-                )
-
-            await self._mount_and_scroll(UserCommandMessage("\n".join(output)))
-        except Exception as e:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Failed to list snapshots: {e}",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-
-    async def _snapshot_restore(self, args: str = "") -> None:
-        """Restore from a snapshot."""
-        name = args.strip()
-        if not name:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    "Usage: /branch-restore <snapshot-name>",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-            return
-
-        try:
-            from vibe.core.session.branch_manager import SnapshotNotFoundError
-
-            restored = self.agent_loop.branch_manager.restore_snapshot(name)
-            self._refresh_branch_display()
-            await self._mount_and_scroll(
-                UserCommandMessage(
-                    f"Restored snapshot **{name}** as new branch **{restored.name}**\n\n"
-                    f"Now on branch: **{restored.name}**"
-                )
-            )
-        except SnapshotNotFoundError:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Snapshot '{name}' not found",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-        except Exception as e:
-            await self._mount_and_scroll(
-                ErrorMessage(
-                    f"Failed to restore snapshot: {e}",
-                    collapsed=self._tools_collapsed,
-                )
-            )
-
-    def _refresh_branch_display(self) -> None:
-        """Refresh the branch display widget after branch operations."""
-        try:
-            branch_display = self.query_one(BranchDisplay)
-            branch_display.refresh_display()
+            thread_display = self.query_one(ThreadDisplay)
+            thread_display.refresh_display()
         except Exception:
             # If widget not found or error, silently ignore
             pass
