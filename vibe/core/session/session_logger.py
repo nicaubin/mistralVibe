@@ -248,6 +248,10 @@ class SessionLogger:
             new_messages = non_system_messages[old_total_messages:]
 
             if len(new_messages) == 0:
+                # Still save thread state even when no new messages
+                # (e.g. after /thread create or /thread-switch)
+                if conv_thread_manager is not None:
+                    await self.save_threads(conv_thread_manager)
                 return
 
             messages_data = [m.model_dump(exclude_none=True) for m in new_messages]
