@@ -31,7 +31,7 @@ from vibe.core.middleware import (
     TurnLimitMiddleware,
 )
 from vibe.core.prompts import UtilityPrompt
-from vibe.core.session.thread_manager import ThreadManager
+from vibe.core.session.conv_thread_manager import ConvThreadManager
 from vibe.core.session.session_logger import SessionLogger
 from vibe.core.session.session_migration import migrate_sessions_entrypoint
 from vibe.core.skills.manager import SkillManager
@@ -130,7 +130,7 @@ class AgentLoop:
         max_price: float | None = None,
         backend: BackendLike | None = None,
         enable_streaming: bool = False,
-        thread_manager: ThreadManager | None = None,
+        conv_thread_manager: ConvThreadManager | None = None,
     ) -> None:
         self._base_config = config
         self._max_turns = max_turns
@@ -178,15 +178,15 @@ class AgentLoop:
         self._teleport_service: TeleportService | None = None
 
         # Initialize thread manager
-        self.thread_manager = thread_manager or ThreadManager(self.session_id)
+        self.conv_thread_manager = conv_thread_manager or ConvThreadManager(self.session_id)
 
-        thread = Thread(
+        migration_thread = Thread(
             target=migrate_sessions_entrypoint,
             args=(config.session_logging,),
             daemon=True,
             name="migrate_sessions",
         )
-        thread.start()
+        migration_thread.start()
 
     @property
     def agent_profile(self) -> AgentProfile:
@@ -222,10 +222,10 @@ class AgentLoop:
 
     def add_message(self, message: LLMMessage) -> None:
         self.messages.append(message)
-        if self.thread_manager:
+        if self.conv_thread_manager:
             # Don't store system messages in thread history
             if message.role != Role.system:
-                self.thread_manager.active_thread.messages.append(message)
+                self.conv_thread_manager.active_thread.messages.append(message)
 
     async def _save_messages(self) -> None:
         await self.session_logger.save_interaction(
@@ -234,7 +234,7 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
-            self.thread_manager,
+            self.conv_thread_manager,
         )
 
     async def _flush_new_messages(self) -> None:
@@ -670,7 +670,7 @@ class AgentLoop:
             from pathlib import Path
 
             resolved = str(Path(file_path).resolve())
-            self.thread_manager.capture_file_before_modification(resolved)
+            self.conv_thread_manager.capture_file_before_modification(resolved)
 
     def _track_file_changes_from_tool_result(
         self, tool_name: str, result: BaseModel
@@ -689,8 +689,8 @@ class AgentLoop:
 
             if file_path:
                 operation = "modified" if file_existed else "created"
-                self.thread_manager.track_file_change(file_path, operation)
-                self.thread_manager.update_file_current_content(file_path)
+                self.conv_thread_manager.track_file_change(file_path, operation)
+                self.conv_thread_manager.update_file_current_content(file_path)
 
         elif tool_name == "search_replace":
             # SearchReplace tool returns SearchReplaceResult with 'file' and 'blocks_applied'
@@ -699,8 +699,8 @@ class AgentLoop:
             blocks_applied = result_dict.get("blocks_applied", 0)
 
             if file_path and blocks_applied > 0:
-                self.thread_manager.track_file_change(file_path, "modified")
-                self.thread_manager.update_file_current_content(file_path)
+                self.conv_thread_manager.track_file_change(file_path, "modified")
+                self.conv_thread_manager.update_file_current_content(file_path)
 
     async def _chat(self, max_tokens: int | None = None) -> LLMChunk:
         active_model = self.config.get_active_model()
@@ -935,7 +935,7 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
-            self.thread_manager,
+            self.conv_thread_manager,
         )
         self.messages = self.messages[:1]
 
@@ -964,7 +964,7 @@ class AgentLoop:
                 self._base_config,
                 self.tool_manager,
                 self.agent_profile,
-                self.thread_manager,
+                self.conv_thread_manager,
             )
 
             summary_request = UtilityPrompt.COMPACT.read()
@@ -1001,7 +1001,7 @@ class AgentLoop:
                 self._base_config,
                 self.tool_manager,
                 self.agent_profile,
-                self.thread_manager,
+                self.conv_thread_manager,
             )
 
             self.middleware_pipeline.reset(reset_reason=ResetReason.COMPACT)
@@ -1015,7 +1015,7 @@ class AgentLoop:
                 self._base_config,
                 self.tool_manager,
                 self.agent_profile,
-                self.thread_manager,
+                self.conv_thread_manager,
             )
             raise
 
@@ -1035,7 +1035,7 @@ class AgentLoop:
             ThreadNotFoundError: If thread does not exist
         """
         warnings: list[str] = []
-        old_thread_name = self.thread_manager.active_thread_name
+        old_thread_name = self.conv_thread_manager.active_thread_name
 
         # Extract system message (always first message if role is system)
         system_message = None
@@ -1043,23 +1043,23 @@ class AgentLoop:
             system_message = self.messages[0]
 
         # 1. Save current thread's file state from disk
-        self.thread_manager.save_current_thread_files()
+        self.conv_thread_manager.save_current_thread_files()
 
         # 2. Switch to target thread
-        target_thread = self.thread_manager.switch_thread(name)
+        target_thread = self.conv_thread_manager.switch_thread(name)
 
         # 3. Restore target thread's files to disk
-        warnings.extend(self.thread_manager.restore_thread_files(name))
+        warnings.extend(self.conv_thread_manager.restore_thread_files(name))
 
         # 4. Revert files that only exist in the old thread
         warnings.extend(
-            self.thread_manager.restore_files_for_leaving_thread(
+            self.conv_thread_manager.restore_files_for_leaving_thread(
                 old_thread_name, name
             )
         )
 
         # 5. Rebuild messages from target thread history
-        target_history = target_thread.get_full_history(self.thread_manager)
+        target_history = target_thread.get_full_history(self.conv_thread_manager)
         if system_message:
             self.messages = [system_message] + target_history
         else:
@@ -1091,7 +1091,7 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
-            self.thread_manager,
+            self.conv_thread_manager,
         )
 
         if base_config is not None:
@@ -1143,5 +1143,5 @@ class AgentLoop:
             self._base_config,
             self.tool_manager,
             self.agent_profile,
-            self.thread_manager,
+            self.conv_thread_manager,
         )

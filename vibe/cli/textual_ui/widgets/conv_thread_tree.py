@@ -7,21 +7,21 @@ from typing import TYPE_CHECKING
 from textual.widgets import Static
 
 if TYPE_CHECKING:
-    from vibe.core.session.thread_manager import ThreadManager
+    from vibe.core.session.conv_thread_manager import ConvThreadManager
 
 
-class ThreadTreeWidget(Static):
+class ConvThreadTreeWidget(Static):
     """Display thread tree with ASCII art visualization."""
 
-    def __init__(self, thread_manager: ThreadManager) -> None:
-        self._thread_manager = thread_manager
+    def __init__(self, conv_thread_manager: ConvThreadManager) -> None:
+        self._conv_thread_manager = conv_thread_manager
         content = self._render_tree()
         super().__init__(content, classes="thread-tree")
 
     def _render_tree(self) -> str:
         """Render thread tree as markdown-formatted text."""
-        threads = self._thread_manager.list_threads()
-        active_name = self._thread_manager.active_thread_name
+        threads = self._conv_thread_manager.list_threads()
+        active_name = self._conv_thread_manager.active_thread_name
 
         lines = ["## Thread Tree\n"]
 
@@ -35,7 +35,7 @@ class ThreadTreeWidget(Static):
 
         # Render tree starting from main (which has no parent)
         def render_thread(name: str, prefix: str = "", is_last: bool = True) -> None:
-            thread = self._thread_manager.get_thread(name)
+            thread = self._conv_thread_manager.get_thread(name)
             is_active = " **[active]**" if name == active_name else ""
 
             # Thread info

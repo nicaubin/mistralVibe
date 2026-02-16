@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.message import Message
 
-from vibe.cli.autocompletion.thread_completion import ThreadCompletionController
+from vibe.cli.autocompletion.conv_thread_completion import ConvThreadCompletionController
 from vibe.cli.autocompletion.path_completion import PathCompletionController
 from vibe.cli.autocompletion.slash_command import SlashCommandController
 from vibe.cli.commands import CommandRegistry
@@ -59,7 +59,7 @@ class ChatInputContainer(Vertical):
         controllers: list = []
         if thread_names_getter:
             controllers.append(
-                ThreadCompletionController(thread_names_getter, self)
+                ConvThreadCompletionController(thread_names_getter, self)
             )
         controllers.extend([
             SlashCommandController(CommandCompleter(self._get_slash_entries), self),

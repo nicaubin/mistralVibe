@@ -13,8 +13,8 @@ from vibe.core.types import LLMMessage
 
 if TYPE_CHECKING:
     from vibe.core.config import SessionLoggingConfig
-    from vibe.core.session.thread import Thread
-    from vibe.core.session.thread_manager import ThreadManager
+    from vibe.core.session.conv_thread import ConvThread
+    from vibe.core.session.conv_thread_manager import ConvThreadManager
 
 
 class SessionLoader:
@@ -163,16 +163,16 @@ class SessionLoader:
         return messages, metadata
 
     @staticmethod
-    def load_threads(filepath: Path) -> ThreadManager | None:
+    def load_threads(filepath: Path) -> ConvThreadManager | None:
         """Load thread manager state from session directory.
 
         Args:
             filepath: Path to session directory
 
         Returns:
-            ThreadManager instance if threads.json exists, None otherwise
+            ConvThreadManager instance if threads.json exists, None otherwise
         """
-        from vibe.core.session.thread_manager import ThreadManager
+        from vibe.core.session.conv_thread_manager import ConvThreadManager
 
         threads_filepath = filepath / THREADS_FILENAME
 
@@ -187,7 +187,7 @@ class SessionLoader:
             return None
 
         try:
-            return ThreadManager.deserialize(threads_data)
+            return ConvThreadManager.deserialize(threads_data)
         except Exception:
             # If deserialization fails, return None to use default main thread
             return None
@@ -279,7 +279,7 @@ class SessionLoader:
     @staticmethod
     def load_thread_from_session(
         session_dir: str, thread_name: str
-    ) -> Thread | None:
+    ) -> ConvThread | None:
         """Load a specific thread from a session directory.
 
         Args:
@@ -287,9 +287,9 @@ class SessionLoader:
             thread_name: Name of the thread to load
 
         Returns:
-            Thread instance if found, None otherwise
+            ConvThread instance if found, None otherwise
         """
-        from vibe.core.session.thread import Thread
+        from vibe.core.session.conv_thread import ConvThread
 
         threads_path = Path(session_dir) / THREADS_FILENAME
         if not threads_path.is_file():
@@ -306,6 +306,6 @@ class SessionLoader:
             return None
 
         try:
-            return Thread.model_validate(thread_data)
+            return ConvThread.model_validate(thread_data)
         except Exception:
             return None

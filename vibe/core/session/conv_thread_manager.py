@@ -1,6 +1,6 @@
 """Thread management for conversation threading feature.
 
-This module provides the ThreadManager class which orchestrates all threading
+This module provides the ConvThreadManager class which orchestrates all threading
 operations including creating threads, switching between them, managing snapshots,
 and tracking file changes.
 """
@@ -12,31 +12,31 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from vibe.core.session.thread import Thread, FileDelta, Snapshot
+from vibe.core.session.conv_thread import ConvThread, FileDelta, Snapshot
 
 MAX_FILE_CONTENT_SIZE = 100 * 1024  # 100KB
 
 
-class ThreadManagerError(Exception):
-    """Base exception for ThreadManager errors."""
+class ConvThreadManagerError(Exception):
+    """Base exception for ConvThreadManager errors."""
 
 
-class ThreadNotFoundError(ThreadManagerError):
+class ConvThreadNotFoundError(ConvThreadManagerError):
     """Raised when attempting to access a non-existent thread."""
 
 
-class ThreadAlreadyExistsError(ThreadManagerError):
+class ConvThreadAlreadyExistsError(ConvThreadManagerError):
     """Raised when attempting to create a thread with a duplicate name."""
 
 
-class SnapshotNotFoundError(ThreadManagerError):
+class SnapshotNotFoundError(ConvThreadManagerError):
     """Raised when attempting to access a non-existent snapshot."""
 
 
-class ThreadManager:
+class ConvThreadManager:
     """Manages conversation threads and snapshots.
 
-    The ThreadManager is responsible for:
+    The ConvThreadManager is responsible for:
     - Creating and deleting threads
     - Switching between threads
     - Tracking file changes per thread
@@ -45,18 +45,18 @@ class ThreadManager:
     """
 
     def __init__(self, session_id: str) -> None:
-        """Initialize ThreadManager with a main thread.
+        """Initialize ConvThreadManager with a main thread.
 
         Args:
             session_id: Unique identifier for the session
         """
         self.session_id = session_id
-        self.threads: dict[str, Thread] = {}
+        self.threads: dict[str, ConvThread] = {}
         self.active_thread_name: str = "main"
         self.snapshots: dict[str, Snapshot] = {}
 
         # Initialize main thread
-        self.threads["main"] = Thread(
+        self.threads["main"] = ConvThread(
             name="main",
             parent=None,
             fork_point=0,
@@ -64,24 +64,24 @@ class ThreadManager:
         )
 
     @property
-    def active_thread(self) -> Thread:
+    def active_thread(self) -> ConvThread:
         """Get the currently active thread."""
         return self.threads[self.active_thread_name]
 
-    def get_thread(self, name: str) -> Thread:
+    def get_thread(self, name: str) -> ConvThread:
         """Get a thread by name.
 
         Args:
             name: Thread name
 
         Returns:
-            Thread instance
+            ConvThread instance
 
         Raises:
-            ThreadNotFoundError: If thread does not exist
+            ConvThreadNotFoundError: If thread does not exist
         """
         if name not in self.threads:
-            raise ThreadNotFoundError(f"Thread '{name}' does not exist")
+            raise ConvThreadNotFoundError(f"Thread '{name}' does not exist")
         return self.threads[name]
 
     def create_thread(
@@ -90,7 +90,7 @@ class ThreadManager:
         parent: str | None = None,
         fork_point: int | None = None,
         description: str = "",
-    ) -> Thread:
+    ) -> ConvThread:
         """Create a new thread.
 
         Args:
@@ -100,18 +100,18 @@ class ThreadManager:
             description: Optional description of the thread
 
         Returns:
-            Newly created Thread instance
+            Newly created ConvThread instance
 
         Raises:
-            ThreadAlreadyExistsError: If thread name already exists
-            ThreadNotFoundError: If parent thread does not exist
+            ConvThreadAlreadyExistsError: If thread name already exists
+            ConvThreadNotFoundError: If parent thread does not exist
         """
         if name in self.threads:
-            raise ThreadAlreadyExistsError(f"Thread '{name}' already exists")
+            raise ConvThreadAlreadyExistsError(f"Thread '{name}' already exists")
 
         parent = parent or self.active_thread_name
         if parent not in self.threads:
-            raise ThreadNotFoundError(f"Parent thread '{parent}' does not exist")
+            raise ConvThreadNotFoundError(f"Parent thread '{parent}' does not exist")
 
         parent_thread = self.threads[parent]
 
@@ -119,7 +119,7 @@ class ThreadManager:
         if fork_point is None:
             fork_point = len(parent_thread.messages)
 
-        thread = Thread(
+        thread = ConvThread(
             name=name,
             parent=parent,
             fork_point=fork_point,
@@ -131,52 +131,52 @@ class ThreadManager:
         self.threads[name] = thread
         return thread
 
-    def switch_thread(self, name: str) -> Thread:
+    def switch_thread(self, name: str) -> ConvThread:
         """Switch to a different thread.
 
         Args:
             name: Name of thread to switch to
 
         Returns:
-            The newly active Thread instance
+            The newly active ConvThread instance
 
         Raises:
-            ThreadNotFoundError: If thread does not exist
+            ConvThreadNotFoundError: If thread does not exist
         """
         if name not in self.threads:
-            raise ThreadNotFoundError(f"Thread '{name}' does not exist")
+            raise ConvThreadNotFoundError(f"Thread '{name}' does not exist")
 
         self.active_thread_name = name
         return self.threads[name]
 
-    def list_threads(self) -> list[Thread]:
+    def list_threads(self) -> list[ConvThread]:
         """Get list of all threads.
 
         Returns:
-            List of all Thread instances
+            List of all ConvThread instances
         """
         return list(self.threads.values())
 
     def import_thread(
-        self, thread: Thread, new_name: str | None = None
-    ) -> Thread:
+        self, thread: ConvThread, new_name: str | None = None
+    ) -> ConvThread:
         """Import a thread from another session.
 
         The imported thread is made standalone (no parent, fork_point=0).
 
         Args:
-            thread: Thread instance to import
+            thread: ConvThread instance to import
             new_name: Optional new name for the thread
 
         Returns:
-            The imported Thread instance
+            The imported ConvThread instance
 
         Raises:
-            ThreadAlreadyExistsError: If a thread with the same name already exists
+            ConvThreadAlreadyExistsError: If a thread with the same name already exists
         """
         name = new_name or thread.name
         if name in self.threads:
-            raise ThreadAlreadyExistsError(f"Thread '{name}' already exists")
+            raise ConvThreadAlreadyExistsError(f"Thread '{name}' already exists")
 
         thread.name = name
         thread.parent = None
@@ -191,17 +191,17 @@ class ThreadManager:
             name: Name of thread to delete
 
         Raises:
-            ThreadNotFoundError: If thread does not exist
-            ThreadManagerError: If trying to delete main or active thread
+            ConvThreadNotFoundError: If thread does not exist
+            ConvThreadManagerError: If trying to delete main or active thread
         """
         if name not in self.threads:
-            raise ThreadNotFoundError(f"Thread '{name}' does not exist")
+            raise ConvThreadNotFoundError(f"Thread '{name}' does not exist")
 
         if name == "main":
-            raise ThreadManagerError("Cannot delete the main thread")
+            raise ConvThreadManagerError("Cannot delete the main thread")
 
         if name == self.active_thread_name:
-            raise ThreadManagerError(
+            raise ConvThreadManagerError(
                 f"Cannot delete active thread '{name}'. Switch to another thread first."
             )
 
@@ -375,15 +375,15 @@ class ThreadManager:
             Created Snapshot instance
 
         Raises:
-            ThreadManagerError: If snapshot name already exists
-            ThreadNotFoundError: If thread does not exist
+            ConvThreadManagerError: If snapshot name already exists
+            ConvThreadNotFoundError: If thread does not exist
         """
         if name in self.snapshots:
-            raise ThreadManagerError(f"Snapshot '{name}' already exists")
+            raise ConvThreadManagerError(f"Snapshot '{name}' already exists")
 
         thread_name = thread_name or self.active_thread_name
         if thread_name not in self.threads:
-            raise ThreadNotFoundError(f"Thread '{thread_name}' does not exist")
+            raise ConvThreadNotFoundError(f"Thread '{thread_name}' does not exist")
 
         thread = self.threads[thread_name]
 
@@ -406,7 +406,7 @@ class ThreadManager:
         """
         return list(self.snapshots.values())
 
-    def restore_snapshot(self, name: str) -> Thread:
+    def restore_snapshot(self, name: str) -> ConvThread:
         """Restore to a snapshot by creating a new thread.
 
         Creates a new thread from the snapshot point with name "{snapshot_name}-restored".
@@ -415,7 +415,7 @@ class ThreadManager:
             name: Name of snapshot to restore
 
         Returns:
-            Newly created Thread instance
+            Newly created ConvThread instance
 
         Raises:
             SnapshotNotFoundError: If snapshot does not exist
@@ -484,14 +484,14 @@ class ThreadManager:
         }
 
     @classmethod
-    def deserialize(cls, data: dict[str, Any]) -> ThreadManager:
+    def deserialize(cls, data: dict[str, Any]) -> ConvThreadManager:
         """Deserialize thread manager state from persistence.
 
         Args:
             data: Serialized thread manager state
 
         Returns:
-            Reconstructed ThreadManager instance
+            Reconstructed ConvThreadManager instance
         """
         manager = cls.__new__(cls)
         manager.session_id = data["session_id"]
@@ -499,7 +499,7 @@ class ThreadManager:
 
         # Reconstruct threads
         manager.threads = {
-            name: Thread.model_validate(thread_data)
+            name: ConvThread.model_validate(thread_data)
             for name, thread_data in data["threads"].items()
         }
 

@@ -1,25 +1,25 @@
-"""Unit tests for ThreadManager and threading functionality."""
+"""Unit tests for ConvThreadManager and threading functionality."""
 
 from __future__ import annotations
 
 import pytest
 
-from vibe.core.session.thread_manager import (
-    ThreadAlreadyExistsError,
-    ThreadManager,
-    ThreadManagerError,
-    ThreadNotFoundError,
+from vibe.core.session.conv_thread_manager import (
+    ConvThreadAlreadyExistsError,
+    ConvThreadManager,
+    ConvThreadManagerError,
+    ConvThreadNotFoundError,
     SnapshotNotFoundError,
 )
 from vibe.core.types import LLMMessage, Role
 
 
-class TestThreadManager:
-    """Test suite for ThreadManager."""
+class TestConvThreadManager:
+    """Test suite for ConvThreadManager."""
 
     def test_init_creates_main_thread(self):
         """Test that initialization creates a main thread."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         assert "main" in manager.threads
         assert manager.active_thread_name == "main"
         assert manager.active_thread.name == "main"
@@ -27,7 +27,7 @@ class TestThreadManager:
 
     def test_create_thread_basic(self):
         """Test creating a basic thread."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
         # Add some messages to main
         manager.active_thread.messages.append(
@@ -47,22 +47,22 @@ class TestThreadManager:
 
     def test_create_thread_with_description(self):
         """Test creating a branch with description."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         branch = manager.create_thread("feature-1", description="Test feature")
 
         assert branch.description == "Test feature"
 
     def test_create_thread_duplicate_name_fails(self):
         """Test that creating a branch with duplicate name fails."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_thread("feature-1")
 
-        with pytest.raises(ThreadAlreadyExistsError):
+        with pytest.raises(ConvThreadAlreadyExistsError):
             manager.create_thread("feature-1")
 
     def test_create_thread_from_specific_parent(self):
         """Test creating a branch from a specific parent."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_thread("feature-1")
         manager.switch_thread("feature-1")
 
@@ -73,14 +73,14 @@ class TestThreadManager:
 
     def test_create_thread_nonexistent_parent_fails(self):
         """Test that creating a branch from nonexistent parent fails."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
-        with pytest.raises(ThreadNotFoundError):
+        with pytest.raises(ConvThreadNotFoundError):
             manager.create_thread("feature-1", parent="nonexistent")
 
     def test_switch_thread(self):
         """Test switching between threads."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_thread("feature-1")
 
         assert manager.active_thread_name == "main"
@@ -92,14 +92,14 @@ class TestThreadManager:
 
     def test_switch_to_nonexistent_branch_fails(self):
         """Test that switching to nonexistent branch fails."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
-        with pytest.raises(ThreadNotFoundError):
+        with pytest.raises(ConvThreadNotFoundError):
             manager.switch_thread("nonexistent")
 
     def test_list_threads(self):
         """Test listing all threads."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_thread("feature-1")
         manager.create_thread("feature-2")
 
@@ -111,7 +111,7 @@ class TestThreadManager:
 
     def test_delete_thread(self):
         """Test deleting a branch."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_thread("feature-1")
 
         manager.delete_thread("feature-1")
@@ -120,39 +120,39 @@ class TestThreadManager:
 
     def test_delete_main_branch_fails(self):
         """Test that deleting main branch fails."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
-        with pytest.raises(ThreadManagerError):
+        with pytest.raises(ConvThreadManagerError):
             manager.delete_thread("main")
 
     def test_delete_active_thread_fails(self):
         """Test that deleting active branch fails without force."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_thread("feature-1")
         manager.switch_thread("feature-1")
 
-        with pytest.raises(ThreadManagerError):
+        with pytest.raises(ConvThreadManagerError):
             manager.delete_thread("feature-1")
 
     def test_delete_active_thread_always_fails(self):
         """Test that deleting active branch always fails."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_thread("feature-1")
         manager.switch_thread("feature-1")
 
-        with pytest.raises(ThreadManagerError):
+        with pytest.raises(ConvThreadManagerError):
             manager.delete_thread("feature-1")
 
     def test_delete_nonexistent_branch_fails(self):
         """Test that deleting nonexistent branch fails."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
-        with pytest.raises(ThreadNotFoundError):
+        with pytest.raises(ConvThreadNotFoundError):
             manager.delete_thread("nonexistent")
 
     def test_track_file_change(self):
         """Test tracking file changes."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
         manager.track_file_change(
             "test.py",
@@ -168,7 +168,7 @@ class TestThreadManager:
 
     def test_track_file_change_overwrites(self):
         """Test that tracking same file multiple times overwrites."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
         manager.track_file_change("test.py", "created", (10, 0))
         manager.track_file_change("test.py", "modified", (5, 2))
@@ -180,7 +180,7 @@ class TestThreadManager:
 
     def test_create_snapshot(self):
         """Test creating a snapshot."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.active_thread.messages.append(
             LLMMessage(role=Role.user, content="Test")
         )
@@ -194,15 +194,15 @@ class TestThreadManager:
 
     def test_create_snapshot_duplicate_name_fails(self):
         """Test that creating snapshot with duplicate name fails."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_snapshot("snapshot-1")
 
-        with pytest.raises(ThreadManagerError):
+        with pytest.raises(ConvThreadManagerError):
             manager.create_snapshot("snapshot-1")
 
     def test_list_snapshots(self):
         """Test listing all snapshots."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_snapshot("snapshot-1")
         manager.create_snapshot("snapshot-2")
 
@@ -214,7 +214,7 @@ class TestThreadManager:
 
     def test_restore_snapshot(self):
         """Test restoring from a snapshot."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
         # Add messages to main
         manager.active_thread.messages.append(
@@ -242,14 +242,14 @@ class TestThreadManager:
 
     def test_restore_nonexistent_snapshot_fails(self):
         """Test that restoring nonexistent snapshot fails."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
         with pytest.raises(SnapshotNotFoundError):
             manager.restore_snapshot("nonexistent")
 
     def test_get_thread_info(self):
         """Test getting branch information."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.create_thread("feature-1", description="Test branch")
         manager.switch_thread("feature-1")
         manager.active_thread.messages.append(
@@ -268,7 +268,7 @@ class TestThreadManager:
 
     def test_serialize_deserialize(self):
         """Test serialization and deserialization."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
         # Add some threads and snapshots
         manager.active_thread.messages.append(
@@ -283,7 +283,7 @@ class TestThreadManager:
         data = manager.serialize()
 
         # Deserialize
-        restored = ThreadManager.deserialize(data)
+        restored = ConvThreadManager.deserialize(data)
 
         assert restored.session_id == manager.session_id
         assert restored.active_thread_name == "feature-1"
@@ -301,12 +301,12 @@ class TestThreadManager:
         assert "test.py" in feature_branch.file_deltas
 
 
-class TestThread:
-    """Test suite for Thread model."""
+class TestConvThread:
+    """Test suite for ConvThread model."""
 
     def test_get_full_history_no_parent(self):
         """Test getting full history for main branch."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         main_branch = manager.active_thread
 
         main_branch.messages.append(LLMMessage(role=Role.user, content="Message 1"))
@@ -320,7 +320,7 @@ class TestThread:
 
     def test_get_full_history_with_parent(self):
         """Test getting full history with parent inheritance."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
         # Add messages to main
         manager.active_thread.messages.append(
@@ -347,7 +347,7 @@ class TestThread:
 
     def test_get_full_history_nested_threads(self):
         """Test getting full history with nested threads."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
 
         # Add messages to main
         manager.active_thread.messages.append(
@@ -378,7 +378,7 @@ class TestThread:
 
     def test_total_messages_property(self):
         """Test total_messages property."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         branch = manager.active_thread
 
         assert branch.total_messages == 0
@@ -388,7 +388,7 @@ class TestThread:
 
     def test_total_file_changes_property(self):
         """Test total_file_changes property."""
-        manager = ThreadManager("test-session")
+        manager = ConvThreadManager("test-session")
         manager.track_file_change("test1.py", "modified")
         manager.track_file_change("test2.py", "created")
 

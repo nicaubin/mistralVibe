@@ -52,8 +52,8 @@ from vibe.cli.textual_ui.widgets.messages import (
 )
 from vibe.cli.textual_ui.widgets.no_markup_static import NoMarkupStatic
 from vibe.cli.textual_ui.widgets.path_display import PathDisplay
-from vibe.cli.textual_ui.widgets.thread_display import ThreadDisplay
-from vibe.cli.textual_ui.widgets.thread_tree import ThreadTreeWidget
+from vibe.cli.textual_ui.widgets.conv_thread_display import ConvThreadDisplay
+from vibe.cli.textual_ui.widgets.conv_thread_tree import ConvThreadTreeWidget
 from vibe.cli.textual_ui.widgets.question_app import QuestionApp
 from vibe.cli.textual_ui.widgets.teleport_message import TeleportMessage
 from vibe.cli.textual_ui.widgets.tools import ToolCallMessage, ToolResultMessage
@@ -274,7 +274,7 @@ class VibeApp(App):  # noqa: PLR0904
 
         with Horizontal(id="bottom-bar"):
             yield PathDisplay(self.config.displayed_workdir or Path.cwd())
-            yield ThreadDisplay(self.agent_loop.thread_manager)
+            yield ConvThreadDisplay(self.agent_loop.conv_thread_manager)
             yield NoMarkupStatic(id="spacer")
             yield ContextProgress()
 
@@ -479,7 +479,7 @@ class VibeApp(App):  # noqa: PLR0904
     def _get_thread_names(self) -> list[str]:
         if not self.agent_loop:
             return []
-        return [t.name for t in self.agent_loop.thread_manager.list_threads()]
+        return [t.name for t in self.agent_loop.conv_thread_manager.list_threads()]
 
     async def _handle_skill(self, user_input: str) -> bool:
         if not user_input.startswith("/"):
@@ -967,10 +967,10 @@ class VibeApp(App):  # noqa: PLR0904
             )
             return
 
-        from vibe.core.session.thread_manager import ThreadAlreadyExistsError
+        from vibe.core.session.conv_thread_manager import ConvThreadAlreadyExistsError
 
         try:
-            thread = self.agent_loop.thread_manager.create_thread(name)
+            thread = self.agent_loop.conv_thread_manager.create_thread(name)
             self.agent_loop.switch_thread(name)
             self._refresh_thread_display()
             await self._mount_and_scroll(
@@ -978,7 +978,7 @@ class VibeApp(App):  # noqa: PLR0904
                     f"Created and switched to thread **{name}** from **{thread.parent}**"
                 )
             )
-        except ThreadAlreadyExistsError:
+        except ConvThreadAlreadyExistsError:
             await self._mount_and_scroll(
                 ErrorMessage(
                     f"Thread '{name}' already exists",
@@ -998,11 +998,11 @@ class VibeApp(App):  # noqa: PLR0904
         try:
             # Check if --status flag is present
             if "--status" in args:
-                tree_widget = ThreadTreeWidget(self.agent_loop.thread_manager)
+                tree_widget = ConvThreadTreeWidget(self.agent_loop.conv_thread_manager)
                 await self._mount_and_scroll(tree_widget)
             else:
-                threads = self.agent_loop.thread_manager.list_threads()
-                active_name = self.agent_loop.thread_manager.active_thread_name
+                threads = self.agent_loop.conv_thread_manager.list_threads()
+                active_name = self.agent_loop.conv_thread_manager.active_thread_name
 
                 output = ["## Conversation Threads\n"]
                 for thread in threads:
@@ -1034,10 +1034,10 @@ class VibeApp(App):  # noqa: PLR0904
             )
             return
 
-        from vibe.core.session.thread_manager import ThreadNotFoundError
+        from vibe.core.session.conv_thread_manager import ConvThreadNotFoundError
 
         try:
-            old_thread = self.agent_loop.thread_manager.active_thread_name
+            old_thread = self.agent_loop.conv_thread_manager.active_thread_name
             warnings = self.agent_loop.switch_thread(name)
             self._refresh_thread_display()
 
@@ -1047,7 +1047,7 @@ class VibeApp(App):  # noqa: PLR0904
                     f"- {w}" for w in warnings
                 )
             await self._mount_and_scroll(UserCommandMessage(msg))
-        except ThreadNotFoundError:
+        except ConvThreadNotFoundError:
             await self._mount_and_scroll(
                 ErrorMessage(
                     f"Thread '{name}' not found",
@@ -1074,18 +1074,18 @@ class VibeApp(App):  # noqa: PLR0904
             )
             return
 
-        from vibe.core.session.thread_manager import (
-            ThreadManagerError,
-            ThreadNotFoundError,
+        from vibe.core.session.conv_thread_manager import (
+            ConvThreadManagerError,
+            ConvThreadNotFoundError,
         )
 
         try:
-            self.agent_loop.thread_manager.delete_thread(name)
+            self.agent_loop.conv_thread_manager.delete_thread(name)
             self._refresh_thread_display()
             await self._mount_and_scroll(
                 UserCommandMessage(f"Deleted thread **{name}**")
             )
-        except (ThreadNotFoundError, ThreadManagerError) as e:
+        except (ConvThreadNotFoundError, ConvThreadManagerError) as e:
             await self._mount_and_scroll(
                 ErrorMessage(str(e), collapsed=self._tools_collapsed)
             )
@@ -1100,7 +1100,7 @@ class VibeApp(App):  # noqa: PLR0904
     def _refresh_thread_display(self) -> None:
         """Refresh the thread display widget after thread operations."""
         try:
-            thread_display = self.query_one(ThreadDisplay)
+            thread_display = self.query_one(ConvThreadDisplay)
             thread_display.refresh_display()
         except Exception:
             # If widget not found or error, silently ignore

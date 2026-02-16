@@ -878,7 +878,7 @@ ExpandingBorder {
 }
 
 PathDisplay,
-ThreadDisplay,
+ConvThreadDisplay,
 ContextProgress {
     width: auto;
     height: auto;
@@ -888,7 +888,7 @@ ContextProgress {
     color: ansi_bright_black;
 }
 
-ThreadDisplay {
+ConvThreadDisplay {
     margin-left: 2;
 }
 

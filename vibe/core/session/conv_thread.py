@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from vibe.core.types import LLMMessage
 
 if TYPE_CHECKING:
-    from vibe.core.session.thread_manager import ThreadManager
+    from vibe.core.session.conv_thread_manager import ConvThreadManager
 
 
 class FileDelta(BaseModel):
@@ -34,7 +34,7 @@ class FileDelta(BaseModel):
     content_too_large: bool = False  # True if file exceeded size limit
 
 
-class Thread(BaseModel):
+class ConvThread(BaseModel):
     """Represents a conversation thread with its own history and file changes.
 
     Each thread maintains:
@@ -53,11 +53,11 @@ class Thread(BaseModel):
     file_deltas: dict[str, FileDelta] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def get_full_history(self, thread_manager: ThreadManager) -> list[LLMMessage]:
+    def get_full_history(self, conv_thread_manager: ConvThreadManager) -> list[LLMMessage]:
         """Get complete message history including inherited messages from parent.
 
         Args:
-            thread_manager: ThreadManager instance to resolve parent messages
+            conv_thread_manager: ConvThreadManager instance to resolve parent messages
 
         Returns:
             Complete list of messages (parent's messages up to fork point + this thread's messages)
@@ -65,8 +65,8 @@ class Thread(BaseModel):
         if self.parent is None:
             return self.messages.copy()
 
-        parent_thread = thread_manager.get_thread(self.parent)
-        parent_full = parent_thread.get_full_history(thread_manager)
+        parent_thread = conv_thread_manager.get_thread(self.parent)
+        parent_full = parent_thread.get_full_history(conv_thread_manager)
         # fork_point is relative to parent's own messages, so we need to
         # include all inherited messages plus fork_point direct messages
         inherited_count = len(parent_full) - len(parent_thread.messages)

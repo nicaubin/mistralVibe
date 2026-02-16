@@ -11,15 +11,15 @@ _THREAD_COMMANDS = ("/thread-switch ", "/thread-delete ")
 MAX_SUGGESTIONS_COUNT = 10
 
 
-class ThreadCompletionController:
+class ConvThreadCompletionController:
     """Autocompletes thread names for /thread-switch, /switch, and /thread-delete."""
 
     def __init__(
         self,
-        thread_names_getter: Callable[[], list[str]],
+        conv_thread_names_getter: Callable[[], list[str]],
         view: CompletionView,
     ) -> None:
-        self._get_thread_names = thread_names_getter
+        self._get_conv_thread_names = conv_thread_names_getter
         self._view = view
         self._suggestions: list[tuple[str, str]] = []
         self._selected_index = 0
@@ -59,7 +59,7 @@ class ThreadCompletionController:
         self._command_prefix, partial = parsed
         partial_lower = partial.lower()
 
-        threads = self._get_thread_names()
+        threads = self._get_conv_thread_names()
         suggestions = [
             (name, "")
             for name in threads

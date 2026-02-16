@@ -16,7 +16,7 @@ from vibe.core.utils import is_windows, utc_now
 if TYPE_CHECKING:
     from vibe.core.agents.models import AgentProfile
     from vibe.core.config import SessionLoggingConfig, VibeConfig
-    from vibe.core.session.thread_manager import ThreadManager
+    from vibe.core.session.conv_thread_manager import ConvThreadManager
     from vibe.core.tools.manager import ToolManager
 
 
@@ -211,7 +211,7 @@ class SessionLogger:
         base_config: VibeConfig,
         tool_manager: ToolManager,
         agent_profile: AgentProfile,
-        thread_manager: ThreadManager | None = None,
+        conv_thread_manager: ConvThreadManager | None = None,
     ) -> None:
         if not self.enabled or self.session_dir is None:
             return
@@ -292,8 +292,8 @@ class SessionLogger:
             await SessionLogger.persist_metadata(metadata_dump, self.session_dir)
 
             # Save thread manager state if provided
-            if thread_manager is not None:
-                await self.save_threads(thread_manager)
+            if conv_thread_manager is not None:
+                await self.save_threads(conv_thread_manager)
         except Exception as e:
             raise RuntimeError(
                 f"Failed to save session to {self.session_dir}: {e}"
@@ -311,16 +311,16 @@ class SessionLogger:
         self.session_dir = self.save_folder
         self.session_metadata = self._initialize_session_metadata()
 
-    async def save_threads(self, thread_manager: ThreadManager) -> None:
+    async def save_threads(self, conv_thread_manager: ConvThreadManager) -> None:
         """Save thread manager state to threads.json.
 
         Args:
-            thread_manager: ThreadManager instance to serialize
+            conv_thread_manager: ConvThreadManager instance to serialize
         """
         if not self.enabled or self.session_dir is None:
             return
 
-        threads_data = thread_manager.serialize()
+        threads_data = conv_thread_manager.serialize()
 
         # Write to threads.json
         threads_filepath = self.threads_filepath
